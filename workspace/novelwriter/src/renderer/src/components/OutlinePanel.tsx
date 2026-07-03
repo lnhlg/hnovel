@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAppStore } from '../store/app'
 import AIGenerateDialog from './AIGenerateDialog'
 
@@ -10,7 +10,13 @@ function OutlinePanel(): JSX.Element {
     saveProjectSynopsis,
     saveChapterOutline,
     aiGenerateChapter,
-    loadChapters
+    loadChapters,
+    storyProgress,
+    loadStoryProgress,
+    saveStoryProgress,
+    autoUpdateStoryProgress,
+    writingStyles,
+    loadWritingStyles
   } = useAppStore()
 
   const [synopsis, setSynopsis] = useState(currentProject?.synopsis ?? '')
@@ -20,12 +26,27 @@ function OutlinePanel(): JSX.Element {
   const [planning, setPlanning] = useState(false)
   const [planResult, setPlanResult] = useState<string | null>(null)
   const [genDialogChapter, setGenDialogChapter] = useState<{ id: string; title: string } | null>(null)
+  const [storyProgressDraft, setStoryProgressDraft] = useState('')
+  const [editingProgress, setEditingProgress] = useState(false)
+  const [progressUpdating, setProgressUpdating] = useState(false)
 
   // Sync synopsis when currentProject changes
-  React.useEffect(() => {
+  useEffect(() => {
     setSynopsis(currentProject?.synopsis ?? '')
     setSynopsisSaved(true)
   }, [currentProject?.id])
+
+  // Load storyProgress when project changes
+  useEffect(() => {
+    if (!currentProject?.id) return
+    loadStoryProgress(currentProject.id)
+    loadWritingStyles()
+  }, [currentProject?.id])
+
+  // Sync storyProgressDraft when storyProgress loads
+  useEffect(() => {
+    setStoryProgressDraft(storyProgress)
+  }, [storyProgress])
 
   const handleSaveSynopsis = async (): Promise<void> => {
     if (!currentProject) return
@@ -117,6 +138,24 @@ function OutlinePanel(): JSX.Element {
     }
   }
 
+  const handleAutoUpdateProgress = async (): Promise<void> => {
+    if (!currentProject) return
+    setProgressUpdating(true)
+    try {
+      await autoUpdateStoryProgress(currentProject.id)
+    } catch (err) {
+      console.error('更新故事进展失败:', err)
+    } finally {
+      setProgressUpdating(false)
+    }
+  }
+
+  const handleSaveProgress = async (): Promise<void> => {
+    if (!currentProject) return
+    await saveStoryProgress(currentProject.id, storyProgressDraft)
+    setEditingProgress(false)
+  }
+
   if (!currentProject) {
     return (
       <div className="p-4 text-sm text-gray-400">
@@ -169,6 +208,91 @@ function OutlinePanel(): JSX.Element {
           {planResult && (
             <p className="mt-1 text-xs text-green-600">{planResult}</p>
           )}
+        </div>
+
+        {/* 项目文风选择 */}
+        {currentProject && writingStyles.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">
+              项目写作风格
+            </label>
+            <select
+              value={currentProject.writingStyleId || ''}
+              onChange={async (e) => {
+                const val = e.target.value
+                await window.api.saveProject({
+                  id: currentProject.id,
+                  writingStyleId: val
+                })
+                // 刷新当前项目
+                const updated = await window.api.openProject(currentProject.id)
+                if (updated) useAppStore.setState({ currentProject: updated })
+              }}
+              className="w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400"
+              style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            >
+              <option value="">（不指定，使用所有风格）</option>
+              {writingStyles.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 故事进展摘要 */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">
+            故事进展摘要
+            <span className="ml-2 text-gray-300 font-normal">（自动跟踪已完成章节的剧情、伏笔、角色变化）</span>
+          </label>
+          {editingProgress ? (
+            <textarea
+              value={storyProgressDraft}
+              onChange={(e) => setStoryProgressDraft(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs leading-relaxed outline-none focus:border-primary-400 resize-none font-mono"
+              rows={12}
+              placeholder="点击「自动更新」从已有章节大纲构建故事进展，或手动编辑..."
+            />
+          ) : (
+            <div
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap max-h-48 overflow-auto cursor-pointer"
+              onClick={() => {
+                setStoryProgressDraft(storyProgress)
+                setEditingProgress(true)
+              }}
+            >
+              {storyProgress || '（暂无故事进展，点击「自动更新」从已有章节大纲构建，或点击此处开始编辑）'}
+            </div>
+          )}
+          <div className="mt-1 flex gap-1">
+            {editingProgress ? (
+              <>
+                <button
+                  onClick={handleSaveProgress}
+                  className="rounded bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600"
+                >
+                  保存
+                </button>
+                <button
+                  onClick={() => {
+                    setStoryProgressDraft(storyProgress)
+                    setEditingProgress(false)
+                  }}
+                  className="rounded border border-gray-300 px-3 py-1 text-xs hover:bg-gray-50"
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={handleAutoUpdateProgress}
+                disabled={progressUpdating}
+                className="rounded border border-primary-300 px-3 py-1 text-xs text-primary-600 hover:bg-primary-50 disabled:opacity-50"
+              >
+                {progressUpdating ? '更新中...' : '自动更新'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* 章节大纲列表 */}

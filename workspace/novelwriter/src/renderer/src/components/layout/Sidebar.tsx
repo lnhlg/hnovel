@@ -26,6 +26,7 @@ export default function Sidebar(): JSX.Element {
     inspirations,
     writingLogs,
     references,
+    writingStyles,
     loadProjects,
     setCurrentProject,
     setCurrentChapter,
@@ -38,6 +39,7 @@ export default function Sidebar(): JSX.Element {
     loadInspirations,
     loadWritingLogs,
     loadReferences,
+    loadWritingStyles,
     createChapter,
     deleteProject,
     deleteChapter
@@ -80,6 +82,7 @@ export default function Sidebar(): JSX.Element {
 
   React.useEffect(() => {
     loadProjects()
+    loadWritingStyles()
   }, [])
 
   const handleSelectProject = async (project: typeof currentProject): Promise<void> => {
@@ -197,6 +200,8 @@ export default function Sidebar(): JSX.Element {
       openDocTab('references', 'references', '参考资料')
     } else if (view === 'logs') {
       openDocTab('writingLogs', 'writingLogs', '写作日志')
+    } else if (view === 'writingStyles') {
+      openDocTab('writingStyles', 'writingStyles', '写作风格')
     }
   }
 

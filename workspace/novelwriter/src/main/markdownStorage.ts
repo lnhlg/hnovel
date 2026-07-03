@@ -107,6 +107,27 @@ export function writeProjectContent(projectPath: string, content: string): void 
   writeFileSync(join(projectPath, '项目信息.md'), content, 'utf-8')
 }
 
+// ===== 故事进展 =====
+
+export function saveStoryProgressMD(projectPath: string, storyProgress: string): void {
+  if (!projectPath) return
+  ensureProjectDirs(projectPath)
+  const content = storyProgress.trim()
+    ? `# 故事进展摘要\n\n> 自动维护，也可手动编辑\n\n${storyProgress}`
+    : '# 故事进展摘要\n\n> 自动维护，也可手动编辑\n\n（暂无内容，保存章节后将自动生成）\n'
+  writeFileSync(join(projectPath, '故事进展.md'), content, 'utf-8')
+}
+
+export function readStoryProgressMD(projectPath: string): string {
+  if (!projectPath) return ''
+  const filePath = join(projectPath, '故事进展.md')
+  if (!existsSync(filePath)) return ''
+  const content = readFileSync(filePath, 'utf-8')
+  // 去掉标题行和元信息行，只保留正文
+  const body = content.replace(/^# .+\n+/, '').replace(/^> .+\n+/, '').trim()
+  return body
+}
+
 // ===== 角色 =====
 
 export function saveCharacterMD(projectPath: string, character: Character): void {

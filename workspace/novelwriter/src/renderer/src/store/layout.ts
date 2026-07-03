@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 
-export type SidebarView = 'project' | 'characters' | 'outline' | 'world' | 'timeline' | 'locations' | 'relations' | 'inspirations' | 'logs' | 'references'
+export type SidebarView = 'project' | 'characters' | 'outline' | 'world' | 'timeline' | 'locations' | 'relations' | 'inspirations' | 'logs' | 'references' | 'writingStyles'
 
-export type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs'
+export type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs' | 'writingStyles'
 
 export interface OpenDoc {
   id: string

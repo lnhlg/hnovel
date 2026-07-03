@@ -104,6 +104,33 @@ function parseJsonBlocks(content: string): Record<string, unknown>[] | null {
   return null
 }
 
+/** 将字段值转为字符串，处理 AI 可能输出数组或对象的情况 */
+function fieldToString(v: unknown): string | undefined {
+  if (v == null) return undefined
+  if (typeof v === 'string') return v
+  if (Array.isArray(v)) return v.map(item => {
+    if (typeof item === 'string') return item
+    if (item && typeof item === 'object') {
+      // 对象：提取所有值拼接
+      return Object.values(item).filter(x => x != null).map(String).join('；')
+    }
+    return String(item)
+  }).join('\n')
+  if (typeof v === 'object') {
+    // 对象：提取所有非空值拼接
+    return Object.values(v).filter(x => x != null).map(String).join('\n')
+  }
+  return String(v)
+}
+
+/** 去除 HTML 标签并修复因去标签导致的标点粘连（如 。，→ 。） */
+function stripHtmlAndFixPunct(text: string): string {
+  return text
+    .replace(/<[^>]*>/g, '')
+    .replace(/([。；！？])\s*，/g, '$1')
+    .trim()
+}
+
 interface AIChatDialogProps {
   open: boolean
   onClose: () => void
@@ -113,7 +140,7 @@ interface AIChatDialogProps {
 }
 
 export default function AIChatDialog({ open, onClose, entityType, projectId, chapterId }: AIChatDialogProps): JSX.Element | null {
-  const { characters, worldSettings, locations, saveCharacter, saveWorldSetting, saveLocation, loadCharacters, loadWorldSettings, loadLocations, saveChapterOutline } = useAppStore()
+  const { characters, worldSettings, locations, saveCharacter, saveWorldSetting, saveLocation, loadCharacters, loadWorldSettings, loadLocations, saveChapterOutline, storyProgress, loadStoryProgress, chapters, loadChapters, chatModel, chatReasoningEffort, setChatModel, setChatReasoningEffort } = useAppStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -122,9 +149,11 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
   const [applyError, setApplyError] = useState('')
   const [applyDone, setApplyDone] = useState(false)
   const [models, setModels] = useState<{ id: string; name: string }[]>([])
-  const [selectedModel, setSelectedModel] = useState('')
+  const [selectedModel, setSelectedModel] = useState(chatModel || '')
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<'low' | 'medium' | 'high' | 'max'>(chatReasoningEffort)
+  const [showEffortDropdown, setShowEffortDropdown] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const streamContentRef = useRef('')
@@ -138,11 +167,41 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
       case 'location':
         return locations.map(l => `- ${l.name}（${l.type || '-'}）`).join('\n')
       case 'chapterOutline':
-        return ''
+        const cp: string[] = []
+        // 当前章信息
+        const curChapter = chapterId ? chapters.find(c => c.id === chapterId) : null
+        if (curChapter) {
+          cp.push(`【目标章节】第${curChapter.sortOrder + 1}章「${curChapter.title}」`)
+          if (curChapter.outline?.trim()) {
+            cp.push(`现有章纲：\n${curChapter.outline.trim().slice(0, 500)}`)
+          }
+          if (curChapter.content?.trim()) {
+            const cleanContent = stripHtmlAndFixPunct(curChapter.content).slice(0, 3000)
+            cp.push(`【目标章节正文】\n${cleanContent}`)
+          }
+        }
+        // 故事进展摘要
+        if (storyProgress) {
+          cp.push(`【故事进展摘要】（已完成章节的剧情、伏笔、角色变化）：\n${storyProgress}`)
+        }
+        // 前 2 章完整正文（仅作连贯性参考）
+        if (chapterId && chapters.length > 0) {
+          const curIdx = chapters.findIndex(c => c.id === chapterId)
+          if (curIdx > 0) {
+            const prevTwo = chapters.slice(Math.max(0, curIdx - 2), curIdx)
+            for (const prev of prevTwo) {
+              const cleanContent = stripHtmlAndFixPunct(prev.content)
+              if (cleanContent) {
+                cp.push(`【前章正文参考：${prev.title}】\n${cleanContent}`)
+              }
+            }
+          }
+        }
+        return cp.join('\n\n')
       default:
         return ''
     }
-  }, [entityType, characters, worldSettings, locations])
+  }, [entityType, characters, worldSettings, locations, storyProgress, chapterId, chapters])
 
   useEffect(() => {
     if (!open) {
@@ -152,6 +211,12 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
 
     const existingList = getExistingList()
     const sysPrompt = buildSystemPrompt(entityType, existingList)
+
+    // 加载故事进展摘要和章节列表（用于章纲对话）
+    if (entityType === 'chapterOutline') {
+      loadStoryProgress(projectId)
+      loadChapters(projectId)
+    }
 
     const cfg = ENTITY_CONFIG[entityType]
     const chapterLabel = entityType === 'chapterOutline' ? '章纲' : (cfg?.label || '内容')
@@ -198,6 +263,23 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
   }, [showModelDropdown])
+
+  // 点击外部关闭推理力度下拉
+  useEffect(() => {
+    if (!showEffortDropdown) return
+    const close = () => setShowEffortDropdown(false)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [showEffortDropdown])
+
+  // 将 AI 对话参数持久化到 store
+  useEffect(() => {
+    if (selectedModel) setChatModel(selectedModel)
+  }, [selectedModel])
+
+  useEffect(() => {
+    setChatReasoningEffort(reasoningEffort)
+  }, [reasoningEffort])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -246,7 +328,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     cleanupRef.current = chunkCleanup ?? null
 
     try {
-        const result = await window.api.aiChat(apiMessages, { stream: true, model: selectedModel || undefined })
+        const result = await window.api.aiChat(apiMessages, { stream: true, model: selectedModel || undefined, reasoningEffort })
       if (result) {
         streamContentRef.current = result
         setMessages((prev) => {
@@ -271,7 +353,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
                 '请把刚才的修改数据用 JSON 数组放在 ```json 代码块中输出，不要其他文字。'
             }
           ]
-          const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined })
+          const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, reasoningEffort })
           if (jsonResult) {
             parsed = parseJsonBlocks(jsonResult)
           }
@@ -313,8 +395,14 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
       for (const entity of pendingEntities) {
         const id = entity.id as string | undefined
         const name = entity.name as string | undefined
+        const title = entity.title as string | undefined
 
-        if (!name && !id) continue
+        // 章纲用 title 而非 name 作为标识
+        if (entityType === 'chapterOutline') {
+          if (!title && !id) continue
+        } else {
+          if (!name && !id) continue
+        }
 
         switch (entityType) {
           case 'character': {
@@ -387,18 +475,18 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
             const title = entity.title as string | undefined
             const time = entity.time as string | undefined
             const loc = entity.location as string | undefined
-            const chars = entity.characters as string | undefined
-            const pov = entity.pov as string | undefined
+            const chars = fieldToString(entity.characters)
+            const pov = fieldToString(entity.pov)
             const goal = entity.goal as string | undefined
             const overview = entity.overview as string | undefined
-            const plot = entity.plot as string | undefined
-            const conflict = entity.conflict as string | undefined
-            const charChange = entity.characterChange as string | undefined
-            const infoRelease = entity.infoRelease as string | undefined
-            const foreshadow = entity.foreshadow as string | undefined
-            const mood = entity.mood as string | undefined
-            const highlight = entity.highlight as string | undefined
-            const hook = entity.hook as string | undefined
+            const plot = fieldToString(entity.plot)
+            const conflict = fieldToString(entity.conflict)
+            const charChange = fieldToString(entity.characterChange)
+            const infoRelease = fieldToString(entity.infoRelease)
+            const foreshadow = fieldToString(entity.foreshadow)
+            const mood = fieldToString(entity.mood)
+            const highlight = fieldToString(entity.highlight)
+            const hook = fieldToString(entity.hook)
             const prevChapter = entity.prevChapter as string | undefined
             const nextChapter = entity.nextChapter as string | undefined
             const focus = entity.focus as string | undefined
@@ -528,6 +616,85 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
                   ) : (
                     <div className="px-3 py-2 text-xs" style={{ color: 'var(--color-text-dim)' }}>暂无可用模型</div>
                   )}
+                </div>
+              )}
+            </div>
+            {/* 推理力度选择器 */}
+            <div className="relative ml-2">
+              <button
+                type="button"
+                onClick={() => setShowEffortDropdown(!showEffortDropdown)}
+                disabled={loading}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors"
+                style={{
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                  minWidth: 52
+                }}
+                title="推理力度：越低响应越快，越高推理越深入"
+              >
+                <span>{reasoningEffort === 'low' ? '低' : reasoningEffort === 'medium' ? '中' : reasoningEffort === 'high' ? '高' : '最高'}</span>
+                <ChevronDown size={10} />
+              </button>
+              {showEffortDropdown && (
+                <div
+                  className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-lg overflow-hidden min-w-[100px]"
+                  style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                >
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={() => { setReasoningEffort('low'); setShowEffortDropdown(false) }}
+                      className="w-full px-3 py-1.5 text-left text-xs transition-colors"
+                      style={{
+                        color: reasoningEffort === 'low' ? 'var(--color-accent)' : 'var(--color-text)',
+                        backgroundColor: reasoningEffort === 'low' ? 'var(--color-accent-light)' : 'transparent'
+                      }}
+                      onMouseEnter={e => { if (reasoningEffort !== 'low') e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                      onMouseLeave={e => { if (reasoningEffort !== 'low') e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      低
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setReasoningEffort('medium'); setShowEffortDropdown(false) }}
+                      className="w-full px-3 py-1.5 text-left text-xs transition-colors"
+                      style={{
+                        color: reasoningEffort === 'medium' ? 'var(--color-accent)' : 'var(--color-text)',
+                        backgroundColor: reasoningEffort === 'medium' ? 'var(--color-accent-light)' : 'transparent'
+                      }}
+                      onMouseEnter={e => { if (reasoningEffort !== 'medium') e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                      onMouseLeave={e => { if (reasoningEffort !== 'medium') e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      中
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setReasoningEffort('high'); setShowEffortDropdown(false) }}
+                      className="w-full px-3 py-1.5 text-left text-xs transition-colors"
+                      style={{
+                        color: reasoningEffort === 'high' ? 'var(--color-accent)' : 'var(--color-text)',
+                        backgroundColor: reasoningEffort === 'high' ? 'var(--color-accent-light)' : 'transparent'
+                      }}
+                      onMouseEnter={e => { if (reasoningEffort !== 'high') e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                      onMouseLeave={e => { if (reasoningEffort !== 'high') e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      高
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setReasoningEffort('max'); setShowEffortDropdown(false) }}
+                      className="w-full px-3 py-1.5 text-left text-xs transition-colors"
+                      style={{
+                        color: reasoningEffort === 'max' ? 'var(--color-accent)' : 'var(--color-text)',
+                        backgroundColor: reasoningEffort === 'max' ? 'var(--color-accent-light)' : 'transparent'
+                      }}
+                      onMouseEnter={e => { if (reasoningEffort !== 'max') e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                      onMouseLeave={e => { if (reasoningEffort !== 'max') e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      最高(max)
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

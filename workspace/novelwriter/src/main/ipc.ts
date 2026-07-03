@@ -3,8 +3,9 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference,
+  Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle,
   loadProjects, saveProject, deleteProject, loadProjectById,
+  loadStoryProgress, saveStoryProgress,
   loadChapters, saveChapter, deleteChapter,
   loadCharacters, saveCharacter, deleteCharacter,
   loadWorldSettings, saveWorldSetting, deleteWorldSetting,
@@ -13,7 +14,8 @@ import {
   loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
   loadInspirations, saveInspiration, deleteInspiration,
   loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference
+  loadReferences, saveReference, deleteReference,
+  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder
 } from './fileStorage'
 import {
   getActiveProvider,
@@ -78,7 +80,9 @@ import {
   parseCharactersFromMD,
   parseWorldSettingsFromMD,
   parseLocationsFromMD,
-  stripChapterTitle
+  stripChapterTitle,
+  saveStoryProgressMD,
+  readStoryProgressMD
 } from './markdownStorage'
 
 function now(): string {
@@ -114,6 +118,8 @@ export function registerProjectHandlers(): void {
     const project: Project = {
       id, name, description: '', synopsis: '', path: '', genre: '',
       wordCountTarget: 0, status: '构思中', worldBackground: '',
+      storyProgress: '',
+      writingStyleId: '',
       createdAt: time, updatedAt: time
     }
     saveProject(project)
@@ -134,6 +140,8 @@ export function registerProjectHandlers(): void {
     const project: Project = {
       id, name, description: '', synopsis: '', path: projectDir, genre: '',
       wordCountTarget: 0, status: '构思中', worldBackground: '',
+      storyProgress: '',
+      writingStyleId: '',
       createdAt: time, updatedAt: time
     }
     saveProject(project)
@@ -162,6 +170,7 @@ export function registerProjectHandlers(): void {
       wordCountTarget: data.wordCountTarget ?? existing.wordCountTarget,
       status: data.status ?? existing.status,
       worldBackground: data.worldBackground ?? existing.worldBackground,
+      writingStyleId: data.writingStyleId ?? existing.writingStyleId,
       updatedAt: time
     }
     saveProject(project)
@@ -194,7 +203,12 @@ export function registerChapterHandlers(): void {
       if (!existing) return undefined
       const chapter: Chapter = {
         ...existing,
-        title: stripChapterTitle(data.title ?? existing.title),
+        // 优先从正文中提取标题
+        title: stripChapterTitle(
+          data.content
+            ? (data.content.match(/^#\s+(.+)/m)?.[1]?.trim() || data.title) ?? existing.title
+            : (data.title ?? existing.title)
+        ),
         content: data.content ?? existing.content,
         outline: data.outline ?? existing.outline,
         sortOrder: data.sortOrder ?? existing.sortOrder,
@@ -443,6 +457,37 @@ export function registerDialogHandlers(): void {
 
 // ===== AI 大纲与章节生成 =====
 
+// 解析大纲中指定标题下的纯文本字段内容
+function extractField(outline: string, fieldTitle: string): string {
+  const regex = new RegExp(`### ${fieldTitle}\\n([\\s\\S]*?)(?=\\n### |\
+$)`)
+  const match = outline.match(regex)
+  if (!match) return ''
+  return match[1].trim().replace(/^- /gm, '').trim()
+}
+
+// 解析大纲中指定标题下的列表项
+function extractListItems(outline: string, fieldTitle: string): string[] {
+  const field = extractField(outline, fieldTitle)
+  if (!field) return []
+  const items = field.split('\n').map(line => line.replace(/^\d+\.\s*/, '').replace(/^-\s*/, '').trim()).filter(Boolean)
+  return items
+}
+
+// 解析冲突字段为字符串数组
+function extractConflict(outline: string): string[] {
+  const field = extractField(outline, '本章冲突')
+  if (!field) return []
+  return field.split('\n').map(line => line.replace(/^- /, '').trim()).filter(Boolean)
+}
+
+// 解析人物变化字段为字符串数组
+function extractCharChanges(outline: string): string[] {
+  const field = extractField(outline, '人物变化')
+  if (!field) return []
+  return field.split('\n').map(line => line.replace(/^- /, '').trim()).filter(Boolean)
+}
+
 export function registerAIOutineHandlers(): void {
   // 保存项目 synopsis
   ipcMain.handle('project:saveSynopsis', (_event, projectId: string, synopsis: string) => {
@@ -459,12 +504,17 @@ export function registerAIOutineHandlers(): void {
   ipcMain.handle('chapter:saveOutline', (_event, chapterId: string, outline: string) => {
     const allProjects = loadProjects()
     for (const project of allProjects) {
-      const chapters = loadChapters(project.id)
+      const chapters = loadChapters(project.id).sort((a, b) => a.sortOrder - b.sortOrder)
       const chapter = chapters.find(c => c.id === chapterId)
       if (chapter) {
         chapter.outline = outline
         chapter.updatedAt = now()
         saveChapter(project.id, chapter)
+        // 同步保存到 MD 文件
+        if (project.path) {
+          const index = chapters.findIndex(c => c.id === chapterId)
+          saveChapterMD(project.path, chapter, index)
+        }
         return chapter
       }
     }
@@ -490,17 +540,47 @@ export function registerAIOutineHandlers(): void {
       prompt += `【小说大纲】\n${opts.synopsis}\n\n`
     }
 
-    if (opts.chapterOutline) {
-      prompt += `【本章概要】\n${opts.chapterOutline}\n\n`
+    // 注入故事进展摘要，让 AI 了解已发生的剧情
+    const storyProgress = loadStoryProgress(opts.projectId)
+    if (storyProgress) {
+      prompt += `【故事进展摘要】（已完成章节的剧情、伏笔、角色变化）\n${storyProgress}\n\n`
+    }
+
+    // 注入写作风格指令（优先使用项目选中的文风）
+    const projectWritingStyleId = loadProjectById(opts.projectId)?.writingStyleId
+    let styleToUse
+    if (projectWritingStyleId) {
+      styleToUse = loadWritingStyles().find(s => s.id === projectWritingStyleId)
+    }
+    if (styleToUse) {
+      prompt += '【写作风格指令】\n'
+      prompt += `- ${styleToUse.name}：${styleToUse.instructions}\n`
+      prompt += '\n请严格遵循上述写作风格进行创作。\n\n'
+    } else {
+      const styles = loadWritingStyles()
+      if (styles.length > 0) {
+        prompt += '【写作风格指令】\n'
+        for (const style of styles) {
+          prompt += `- ${style.name}：${style.instructions}\n`
+        }
+        prompt += '\n请严格遵循上述写作风格进行创作。\n\n'
+      }
     }
 
     if (opts.previousChapters.length > 0) {
-      prompt += '【前面章节的简要回顾】\n'
-      for (const ch of opts.previousChapters.slice(-3)) { // 只取最近 3 章
-        const preview = ch.content.replace(/<[^>]*>/g, '').slice(0, 300)
-        prompt += `- ${ch.title}: ${preview}...\n`
+      // 最近 2 章的完整正文作为上下文
+      const recentTwo = opts.previousChapters.slice(-2)
+      for (const ch of recentTwo) {
+        const cleanContent = ch.content.replace(/<[^>]*>/g, '').replace(/([。；！？])\s*，/g, '$1').trim()
+        if (cleanContent) {
+          prompt += `【前章正文：${ch.title}】\n${cleanContent}\n\n`
+        }
       }
-      prompt += '\n'
+    }
+
+    // 本章概要紧挨生成指令，让 AI 聚焦
+    if (opts.chapterOutline) {
+      prompt += `【本章概要——请严格按照此大纲生成正文】\n${opts.chapterOutline}\n\n`
     }
 
     prompt += `请生成章节「${opts.chapterTitle}」的完整内容。要求：\n`
@@ -508,9 +588,10 @@ export function registerAIOutineHandlers(): void {
     prompt += '2. 章节有合理的起承转合\n'
     prompt += '3. 对话自然，描写生动\n'
     prompt += '4. 字数在 2000-5000 字之间\n'
+    prompt += '5. 【关键】必须严格遵循【本章概要——请严格按照此大纲生成正文】中的剧情流程、冲突设计和伏笔安排，不得偏离大纲内容\n'
 
     const messages = [
-      { role: 'system', content: '你是一位专业的小说作家，擅长创作各种题材的小说。请用中文写作。' },
+      { role: 'system', content: '你是一位专业的小说作家。请严格遵循用户提供的章节大纲来生成正文，不得偏离大纲规定的剧情流程、冲突和人物变化。请用中文写作。' },
       { role: 'user', content: prompt }
     ]
 
@@ -593,6 +674,159 @@ ${opts.synopsis}
       }
     }
     return { error: '未能从 AI 响应中提取章节规划', raw: result }
+  })
+
+  // ===== 故事进展 =====
+
+  // 获取故事进展摘要
+  ipcMain.handle('storyProgress:get', (_event, projectId: string) => {
+    return loadStoryProgress(projectId)
+  })
+
+  // 手动保存/编辑故事进展摘要
+  ipcMain.handle('storyProgress:save', (_event, projectId: string, newStoryProgress: string) => {
+    saveStoryProgress(projectId, newStoryProgress)
+    const project = loadProjectById(projectId)
+    if (project?.path) {
+      saveStoryProgressMD(project.path, newStoryProgress)
+    }
+    return true
+  })
+
+  // 从已有章节自动构建/更新故事进展摘要
+  ipcMain.handle('storyProgress:autoUpdate', (_event, projectId: string) => {
+    const project = loadProjectById(projectId)
+    const projectPath = project?.path
+
+    const chapters = loadChapters(projectId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+
+    if (chapters.length === 0) return ''
+
+    const entries: string[] = []
+    const allForeshadow: string[] = []
+    const allCharChanges: Map<string, string[]> = new Map()
+
+    // 先尝试从 MD 文件同步缺失的大纲
+    for (let i = 0; i < chapters.length; i++) {
+      const ch = chapters[i]
+      if (!ch.outline?.trim() && projectPath) {
+        const mdContent = readChapterContent(projectPath, i, ch.title)
+        if (mdContent) {
+          const outlineMatch = mdContent.match(/## 本章概要\r?\n([\s\S]*?)(?=\r?\n## |\r?\n$)/)
+          const mdOutline = outlineMatch?.[1]?.trim()
+          if (mdOutline) {
+            ch.outline = mdOutline
+            saveChapter(projectId, ch)
+          }
+        }
+      }
+    }
+
+    // 重新加载章节（获取同步后的数据）
+    const syncedChapters = loadChapters(projectId)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+
+    for (const ch of syncedChapters) {
+      const outline = ch.outline || ''
+      const title = ch.title || `第${ch.sortOrder + 1}章`
+      const overview = extractField(outline, '本章剧情概述')
+      const plotFlow = extractListItems(outline, '剧情流程')
+      const conflicts = extractConflict(outline)
+      const infoRelease = extractListItems(outline, '释放信息')
+      const foreshadow = extractListItems(outline, '埋下伏笔')
+      const charChangeRaw = extractCharChanges(outline)
+      const hook = extractField(outline, '章节结尾钩子')
+
+      const entryParts: string[] = [
+        `### 第${ch.sortOrder + 1}章「${title}」`,
+      ]
+      const hasStructuredData = overview || plotFlow.length > 0 || infoRelease.length > 0 ||
+        foreshadow.length > 0 || charChangeRaw.length > 0 || hook
+
+      if (overview) {
+        const brief = overview.replace(/\n/g, ' ').slice(0, 800)
+        entryParts.push(`- 剧情概述：${brief}`)
+      }
+      if (plotFlow.length > 0) {
+        entryParts.push(`- 关键事件：${plotFlow.slice(0, 3).join(' → ')}`)
+      }
+      if (infoRelease.length > 0) {
+        entryParts.push(`- 释放信息：${infoRelease.join('；')}`)
+      }
+      if (foreshadow.length > 0) {
+        entryParts.push(`- 埋下伏笔：${foreshadow.join('；')}`)
+        allForeshadow.push(...foreshadow.map(f => `${f}（第${ch.sortOrder + 1}章）`))
+      }
+      if (charChangeRaw.length > 0) {
+        entryParts.push(`- 人物变化：${charChangeRaw.join('；')}`)
+        for (const change of charChangeRaw) {
+          const name = change.split('：')[0]?.trim() || change.split(':')[0]?.trim()
+          if (name) {
+            const list = allCharChanges.get(name) || []
+            list.push(`第${ch.sortOrder + 1}章：${change}`)
+            allCharChanges.set(name, list)
+          }
+        }
+      }
+      if (hook) {
+        entryParts.push(`- 结尾钩子：${hook.replace(/\n/g, ' ').slice(0, 300)}`)
+      }
+
+      // 如果结构化解析无结果但有 outline 原文，回退显示原始内容片段
+      if (!hasStructuredData && outline.trim()) {
+        const rawSnippet = outline.trim().replace(/\n/g, ' ').slice(0, 200)
+        entryParts.push(`- 概要：${rawSnippet}...`)
+      }
+
+      // 没有任何大纲内容时显示占位
+      if (!hasStructuredData && !outline.trim()) {
+        entryParts.push('（暂未填写大纲）')
+      }
+
+      entries.push(entryParts.join('\n'))
+    }
+
+    const parts: string[] = [
+      '## 已完成章节',
+      '',
+      entries.join('\n\n'),
+    ]
+
+    // 活跃冲突/剧情线
+    const allConflicts = syncedChapters.map(ch => {
+      const c = extractConflict(ch.outline || '')
+      return c.length > 0 ? `第${ch.sortOrder + 1}章：${c.join('；')}` : ''
+    }).filter(Boolean)
+    if (allConflicts.length > 0) {
+      parts.push('', '## 活跃冲突/剧情线', '')
+      parts.push(allConflicts.join('\n'))
+    }
+
+    // 待回收伏笔
+    if (allForeshadow.length > 0) {
+      parts.push('', '## 待回收伏笔', '')
+      parts.push(allForeshadow.map(f => `- ${f}`).join('\n'))
+    }
+
+    // 角色现状
+    if (allCharChanges.size > 0) {
+      parts.push('', '## 角色现状', '')
+      for (const [name, changes] of allCharChanges) {
+        parts.push(`- ${name}：${changes.join('；')}`)
+      }
+    }
+
+    const newStoryProgress = parts.join('\n')
+
+    // 保存到 JSON 和 MD
+    saveStoryProgress(projectId, newStoryProgress)
+    const savedProject = loadProjectById(projectId)
+    if (savedProject?.path) {
+      saveStoryProgressMD(savedProject.path, newStoryProgress)
+    }
+
+    return newStoryProgress
   })
 }
 
@@ -1927,6 +2161,53 @@ export function registerReferenceHandlers(): void {
   })
 }
 
+// ===== 写作风格 =====
+
+export function registerWritingStyleHandlers(): void {
+  ipcMain.handle('writingStyle:list', () => {
+    return loadWritingStyles().sort((a, b) => a.sortOrder - b.sortOrder)
+  })
+
+  ipcMain.handle('writingStyle:save', (_event, data: Partial<WritingStyle>) => {
+    const time = now()
+
+    if (data.id) {
+      const existing = loadWritingStyles().find(s => s.id === data.id)
+      if (!existing) return undefined
+      const style: WritingStyle = {
+        ...existing,
+        name: data.name ?? existing.name,
+        description: data.description ?? existing.description,
+        instructions: data.instructions ?? existing.instructions,
+        sortOrder: data.sortOrder ?? existing.sortOrder,
+        updatedAt: time
+      }
+      saveWritingStyle(style)
+      return style
+    } else {
+      const id = randomUUID()
+      const sortOrder = getNextWritingStyleSortOrder()
+      const style: WritingStyle = {
+        id,
+        projectId: '',
+        name: data.name ?? '',
+        description: data.description ?? '',
+        instructions: data.instructions ?? '',
+        sortOrder,
+        createdAt: time,
+        updatedAt: time
+      }
+      saveWritingStyle(style)
+      return style
+    }
+  })
+
+  ipcMain.handle('writingStyle:delete', (_event, id: string) => {
+    deleteWritingStyle(id)
+    return { success: true }
+  })
+}
+
 // ===== 文档内容读取/保存（以 Markdown 原文形式） =====
 
 type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs'
@@ -2438,7 +2719,7 @@ function buildAssetPrompt(req: GenerateAssetRequest): { system: string; user: st
     },
     'chapter-outline': {
       system: '你是一位专业的小说编辑与策划师，擅长从已有正文提炼结构化大纲。请根据给定的章节正文，按照 specs/章纲格式规范.md 定义的模板生成本章详细大纲。',
-      user: `${contextText}\n\n章节正文：\n${ctx.chapterContent || '（无正文）'}${req.hint ? `\n\n用户要求：${req.hint}` : ''}\n\n请基于以上正文，严格按照以下格式输出章纲。每个字段都要根据正文内容填写，不要留空。只输出大纲内容，不要包含任何额外说明或代码块。\n\n### 章节信息\n- 编号：[数字]\n- 标题：[章节标题]\n- 时间：[故事内时间]\n- 地点：[主要场景]\n- 出场人物：[人物列表]\n- 视角人物：[视角角色]\n\n### 本章目标\n[一句话概括本章目的]\n\n### 本章剧情概述\n[2-4段叙述性文字概述全章]\n\n### 剧情流程\n1. [剧情点1]\n2. [剧情点2]\n3. [剧情点3]\n4. [剧情点4]\n5. [剧情点5]\n\n### 本章冲突\n- 外部冲突：[描述]\n- 内部冲突：[描述]\n- 人际冲突：[描述]\n\n### 人物变化\n- [角色A]：[变化]\n- [角色B]：[变化]\n\n### 释放信息\n1. [信息1]\n2. [信息2]\n\n### 埋下伏笔\n1. [伏笔1]\n2. [伏笔2]\n\n### 本章情绪基调\n[关键词]\n\n### 本章看点/爽点/泪点\n- 看点：[看点]\n- 爽点：[爽点]\n- 泪点：[泪点]\n\n### 章节结尾钩子\n[一句话悬念]\n\n### 承接上一章\n[衔接说明]\n\n### 引出下一章\n[预告说明]\n\n### 描写重点\n[描写要点]\n\n### 预计字数\n本章正文约[N]字\n\n### 备注\n[注意事项]`
+      user: `${contextText}\n\n章节正文：\n${ctx.chapterContent || '（无正文）'}${req.hint ? `\n\n用户要求：${req.hint}` : ''}\n\n请基于以上正文，生成该章节的结构化章纲。每个字段都要根据正文内容填写，不要留空。只输出大纲内容，不要包含任何额外说明或代码块。\n\n### 章节信息\n- 编号：[数字]\n- 标题：[章节标题]\n- 时间：[故事内时间]\n- 地点：[主要场景]\n- 出场人物：[人物列表]\n- 视角人物：[视角角色]\n\n### 本章目标\n[一句话概括本章目的]\n\n### 本章剧情概述\n[2-4段叙述性文字概述全章]\n\n### 剧情流程\n1. [剧情点1]\n2. [剧情点2]\n3. [剧情点3]\n4. [剧情点4]\n5. [剧情点5]\n\n### 本章冲突\n- 外部冲突：[描述]\n- 内部冲突：[描述]\n- 人际冲突：[描述]\n\n### 人物变化\n- [角色A]：[变化]\n- [角色B]：[变化]\n\n### 释放信息\n1. [信息1]\n2. [信息2]\n\n### 埋下伏笔\n1. [伏笔1]\n2. [伏笔2]\n\n### 本章情绪基调\n[关键词]\n\n### 本章看点/爽点/泪点\n- 看点：[看点]\n- 爽点：[爽点]\n- 泪点：[泪点]\n\n### 章节结尾钩子\n[一句话悬念]\n\n### 承接上一章\n[衔接说明]\n\n### 引出下一章\n[预告说明]\n\n### 描写重点\n[描写要点]\n\n### 预计字数\n本章正文约[N]字\n\n### 备注\n[注意事项]`
     }
   }
   return prompts[req.type]

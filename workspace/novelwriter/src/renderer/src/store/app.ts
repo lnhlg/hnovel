@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export interface Project {
   id: string
@@ -10,6 +11,8 @@ export interface Project {
   wordCountTarget: number
   status: string
   worldBackground: string
+  storyProgress: string
+  writingStyleId: string
   createdAt: string
   updatedAt: string
 }
@@ -24,6 +27,7 @@ export interface Chapter {
   wordCount: number
   status: string
   draftVersion: number
+  storyProgressSynced: number
   createdAt: string
   updatedAt: string
 }
@@ -132,6 +136,17 @@ export interface Reference {
   updatedAt: string
 }
 
+export interface WritingStyle {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  instructions: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 interface AppState {
   // 项目
   projects: Project[]
@@ -158,6 +173,9 @@ interface AppState {
   // 编辑器
   editorContent: string
   editorMode: 'richtext' | 'markdown'
+  // AI 对话参数（跨会话记忆）
+  chatModel: string
+  chatReasoningEffort: 'low' | 'medium' | 'high' | 'max'
   // 操作
   loadProjects: () => Promise<void>
   setCurrentProject: (project: Project | null) => void
@@ -192,6 +210,9 @@ interface AppState {
     chapterTitle?: string
     chapterContent?: string
   }) => Promise<{ data?: unknown; error?: string; raw?: string }>
+  // AI 对话参数
+  setChatModel: (model: string) => void
+  setChatReasoningEffort: (effort: 'low' | 'medium' | 'high' | 'max') => void
   // 世界观设定操作
   loadWorldSettings: (projectId: string) => Promise<void>
   saveWorldSetting: (data: Partial<WorldSetting> & { projectId: string }) => Promise<void>
@@ -220,9 +241,21 @@ interface AppState {
   loadReferences: (projectId: string) => Promise<void>
   saveReference: (data: Partial<Reference> & { projectId: string }) => Promise<void>
   deleteReference: (id: string) => Promise<void>
+  // 写作风格操作（全局，不依赖项目）
+  writingStyles: WritingStyle[]
+  loadWritingStyles: () => Promise<void>
+  saveWritingStyle: (data: Partial<WritingStyle>) => Promise<void>
+  deleteWritingStyle: (id: string) => Promise<void>
+  // 故事进展摘要
+  storyProgress: string
+  loadStoryProgress: (projectId: string) => Promise<void>
+  saveStoryProgress: (projectId: string, text: string) => Promise<void>
+  autoUpdateStoryProgress: (projectId: string) => Promise<string>
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
   projects: [],
   currentProject: null,
   chapters: [],
@@ -235,8 +268,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   inspirations: [],
   writingLogs: [],
   references: [],
+  writingStyles: [],
   editorContent: '',
   editorMode: 'richtext',
+  chatModel: '',
+  chatReasoningEffort: 'medium' as const,
+  storyProgress: '',
 
   loadProjects: async () => {
     const projects = await window.api.listProjects()
@@ -254,6 +291,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setEditorContent: (content) => set({ editorContent: content }),
 
   setEditorMode: (mode) => set({ editorMode: mode }),
+
+  setChatModel: (model) => set({ chatModel: model }),
+
+  setChatReasoningEffort: (effort) => set({ chatReasoningEffort: effort }),
 
   loadChapters: async (projectId) => {
     const chapters = await window.api.getChapters(projectId)
@@ -295,6 +336,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       inspirations: isCurrent ? [] : get().inspirations,
       writingLogs: isCurrent ? [] : get().writingLogs,
       references: isCurrent ? [] : get().references,
+      writingStyles: isCurrent ? [] : get().writingStyles,
       editorContent: isCurrent ? '' : get().editorContent
     })
   },
@@ -532,5 +574,47 @@ export const useAppStore = create<AppState>((set, get) => ({
     await window.api.deleteReference(id)
     const { references } = get()
     set({ references: references.filter((r) => r.id !== id) })
+  },
+
+  // 写作风格操作
+  loadWritingStyles: async () => {
+    const styles = await window.api.getWritingStyles()
+    set({ writingStyles: styles })
+  },
+
+  saveWritingStyle: async (data) => {
+    const saved = await window.api.saveWritingStyle(data)
+    const { writingStyles } = get()
+    set({ writingStyles: [...writingStyles.filter(s => s.id !== saved.id), saved] })
+  },
+
+  deleteWritingStyle: async (id) => {
+    await window.api.deleteWritingStyle(id)
+    const { writingStyles } = get()
+    set({ writingStyles: writingStyles.filter((s) => s.id !== id) })
+  },
+
+  loadStoryProgress: async (projectId) => {
+    const text = await window.api.getStoryProgress(projectId)
+    set({ storyProgress: text })
+  },
+
+  saveStoryProgress: async (projectId, text) => {
+    await window.api.saveStoryProgress(projectId, text)
+    set({ storyProgress: text })
+  },
+
+  autoUpdateStoryProgress: async (projectId) => {
+    const text = await window.api.autoUpdateStoryProgress(projectId)
+    set({ storyProgress: text })
+    return text
   }
-}))
+})),
+  {
+    name: 'novelwriter-chat-prefs',
+    partialize: (state) => ({
+      chatModel: state.chatModel,
+      chatReasoningEffort: state.chatReasoningEffort
+    })
+  }
+)

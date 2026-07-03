@@ -68,7 +68,8 @@ export async function chatOpenAI(
   provider: AIProvider,
   model: string,
   messages: ChatMessage[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'max'
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
   
@@ -81,7 +82,8 @@ export async function chatOpenAI(
     body: JSON.stringify({
       model,
       messages,
-      stream: false
+      stream: false,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
     }),
     signal
   })
@@ -100,7 +102,8 @@ export async function chatOpenAIStream(
   model: string,
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'max'
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
   
@@ -113,7 +116,8 @@ export async function chatOpenAIStream(
     body: JSON.stringify({
       model,
       messages,
-      stream: true
+      stream: true,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
     }),
     signal
   })
@@ -127,17 +131,48 @@ export async function chatOpenAIStream(
 
   const decoder = new TextDecoder()
   let fullContent = ''
+  let remainder = ''
 
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
 
-    const text = decoder.decode(value, { stream: true })
-    const lines = text.split('\n').filter((l) => l.startsWith('data: '))
+    // 将本次数据与前次未处理完的残余拼接
+    const text = remainder + decoder.decode(value, { stream: true })
+    remainder = ''
+
+    // 按行分割，保留最后一段不完整的行给下次处理
+    const splitIdx = text.lastIndexOf('\n')
+    if (splitIdx === -1) {
+      // 本次数据中没有完整行，全部留给下次
+      remainder = text
+      continue
+    }
+    const complete = text.slice(0, splitIdx)
+    remainder = text.slice(splitIdx + 1)
+
+    const lines = complete.split('\n').filter((l) => l.startsWith('data: '))
 
     for (const line of lines) {
       const data = line.slice(6)
       if (data === '[DONE]') continue
+      try {
+        const parsed = JSON.parse(data)
+        const content = parsed.choices?.[0]?.delta?.content ?? ''
+        if (content) {
+          fullContent += content
+          onChunk(content)
+        }
+      } catch {
+        // skip parse errors for incomplete chunks
+      }
+    }
+  }
+
+  // 处理流结束后残留的不完整行
+  if (remainder.startsWith('data: ')) {
+    const data = remainder.slice(6)
+    if (data !== '[DONE]') {
       try {
         const parsed = JSON.parse(data)
         const content = parsed.choices?.[0]?.delta?.content ?? ''
@@ -462,10 +497,11 @@ export function registerAIHandlers(): void {
   })
 
   // AI 聊天（使用当前活跃供应商和模型，可通过 options.model 临时切换模型）
-  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string }) => {
+  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max' }) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const isStream = options?.stream ?? false
     const model = options?.model || currentModel
+    const reasoningEffort = options?.reasoningEffort
 
     if (!activeProvider) {
       throw new Error('请先配置 AI 供应商')
@@ -486,9 +522,9 @@ export function registerAIHandlers(): void {
       if (isStream && window) {
         return await chatOpenAIStream(activeProvider, model, messages, (chunk) => {
           window.webContents.send('ai:chunk', chunk)
-        })
+        }, undefined, reasoningEffort)
       }
-      return await chatOpenAI(activeProvider, model, messages)
+      return await chatOpenAI(activeProvider, model, messages, undefined, reasoningEffort)
     }
   })
 

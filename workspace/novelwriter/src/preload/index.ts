@@ -76,6 +76,12 @@ const api = {
   // AI 资产生成（角色/世界观/时间线/地点/关系/灵感/参考资料）
   generateAsset: (req: unknown) => ipcRenderer.invoke('ai:generateAsset', req),
 
+  // 故事进展摘要
+  getStoryProgress: (projectId: string) => ipcRenderer.invoke('storyProgress:get', projectId),
+  saveStoryProgress: (projectId: string, storyProgress: string) =>
+    ipcRenderer.invoke('storyProgress:save', projectId, storyProgress),
+  autoUpdateStoryProgress: (projectId: string) => ipcRenderer.invoke('storyProgress:autoUpdate', projectId),
+
   // 世界观设定
   getWorldSettings: (projectId: string) => ipcRenderer.invoke('worldSettings:list', projectId),
   saveWorldSetting: (data: unknown) => ipcRenderer.invoke('worldSettings:save', data),
@@ -110,6 +116,11 @@ const api = {
   getReferences: (projectId: string) => ipcRenderer.invoke('reference:list', projectId),
   saveReference: (data: unknown) => ipcRenderer.invoke('reference:save', data),
   deleteReference: (id: string) => ipcRenderer.invoke('reference:delete', id),
+
+  // 写作风格（全局）
+  getWritingStyles: () => ipcRenderer.invoke('writingStyle:list'),
+  saveWritingStyle: (data: unknown) => ipcRenderer.invoke('writingStyle:save', data),
+  deleteWritingStyle: (id: string) => ipcRenderer.invoke('writingStyle:delete', id),
 
   // 文档读写（Markdown 原文）
   readDoc: (projectId: string, docType: string, entityId: string) =>

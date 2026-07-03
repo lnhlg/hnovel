@@ -14,6 +14,8 @@ export interface Project {
   wordCountTarget: number
   status: string
   worldBackground: string
+  storyProgress: string
+  writingStyleId: string
   createdAt: string
   updatedAt: string
 }
@@ -28,6 +30,7 @@ export interface Chapter {
   wordCount: number
   status: string
   draftVersion: number
+  storyProgressSynced: number
   createdAt: string
   updatedAt: string
 }
@@ -143,6 +146,17 @@ export interface Reference {
   updatedAt: string
 }
 
+export interface WritingStyle {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  instructions: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AIProvider {
   id: string
   name: string
@@ -160,6 +174,8 @@ export interface AIProvider {
 const APP_DIR = join(app.getPath('userData'), 'novelwriter')
 const PROJECTS_FILE = join(APP_DIR, 'projects.json')
 const AI_PROVIDERS_FILE = join(APP_DIR, 'aiProviders.json')
+const WRITING_STYLES_DIR = join(app.getAppPath(), 'writing-styles')
+const WRITING_STYLES_FILE = join(WRITING_STYLES_DIR, 'styles.json')
 
 function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -409,6 +425,51 @@ export function deleteReference(projectId: string, id: string): void {
   storeFor<Reference>(projectId, 'references.json').delete(id)
 }
 
+// ===================== 写作风格（全局） =====================
+
+export function loadWritingStyles(): WritingStyle[] {
+  return readJson<WritingStyle[]>(WRITING_STYLES_FILE) ?? []
+}
+
+export function saveWritingStyle(style: WritingStyle): WritingStyle {
+  const styles = loadWritingStyles()
+  const idx = styles.findIndex(s => s.id === style.id)
+  if (idx >= 0) {
+    styles[idx] = style
+  } else {
+    styles.push(style)
+  }
+  ensureDir(WRITING_STYLES_DIR)
+  writeJson(WRITING_STYLES_FILE, styles)
+  return style
+}
+
+export function deleteWritingStyle(id: string): void {
+  const styles = loadWritingStyles().filter(s => s.id !== id)
+  ensureDir(WRITING_STYLES_DIR)
+  writeJson(WRITING_STYLES_FILE, styles)
+}
+
+export function getNextWritingStyleSortOrder(): number {
+  const styles = loadWritingStyles()
+  return styles.length > 0 ? Math.max(...styles.map(s => s.sortOrder)) + 1 : 0
+}
+
+// ===================== 故事进展 =====================
+
+export function loadStoryProgress(projectId: string): string {
+  const project = loadProjectById(projectId)
+  return project?.storyProgress ?? ''
+}
+
+export function saveStoryProgress(projectId: string, storyProgress: string): void {
+  const project = loadProjectById(projectId)
+  if (!project) return
+  project.storyProgress = storyProgress
+  project.updatedAt = new Date().toISOString()
+  saveProject(project)
+}
+
 // ===================== AI 供应商操作 =====================
 
 export function loadAIProviders(): AIProvider[] {
@@ -441,4 +502,6 @@ export async function initStorage(): Promise<void> {
   // 确保全局文件存在
   if (!existsSync(PROJECTS_FILE)) writeJson(PROJECTS_FILE, [])
   if (!existsSync(AI_PROVIDERS_FILE)) writeJson(AI_PROVIDERS_FILE, [])
+  ensureDir(WRITING_STYLES_DIR)
+  if (!existsSync(WRITING_STYLES_FILE)) writeJson(WRITING_STYLES_FILE, [])
 }

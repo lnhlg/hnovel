@@ -4,6 +4,7 @@ import { useLayoutStore, type OpenDoc } from '../store/layout'
 import { useAppStore } from '../store/app'
 import ExtractCharactersDialog from './dialogs/ExtractCharactersDialog'
 import AIChatDialog from './dialogs/AIChatDialog'
+import AIGenerateDialog from './AIGenerateDialog'
 
 interface ChapterDocEditorProps {
   doc: OpenDoc
@@ -66,7 +67,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const setDocTitle = useLayoutStore((s) => s.setDocTitle)
   const currentProject = useAppStore((s) => s.currentProject)
   const aiGenerate = useAppStore((s) => s.aiGenerate)
+  const aiGenerateChapter = useAppStore((s) => s.aiGenerateChapter)
   const loadChapters = useAppStore((s) => s.loadChapters)
+  const chapters = useAppStore((s) => s.chapters)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [loading, setLoading] = useState(false)
@@ -77,6 +80,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [showExtract, setShowExtract] = useState(false)
   const [extractText, setExtractText] = useState('')
   const [showAiChatOutline, setShowAiChatOutline] = useState(false)
+  const [genContentDialog, setGenContentDialog] = useState(false)
 
   // Refs to hold section text (avoid cursor jump from re-parsing on every keystroke)
   const outlineRef = useRef<string>('')
@@ -111,6 +115,15 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       contentRef.current = parsed.content
       const t = (extractTitle(parsed.preamble) || doc.title).replace(/^(?:\d+\.[\s-]*|第\s*[一二三四五六七八九十百千\d]+\s*章\s*[·•.、．:\s-]*)+/, '').trim()
       setTitle(t)
+      // 如果 MD 标题与 JSON 不一致，以 MD 为准同步回 JSON 和侧栏
+      const ch = useAppStore.getState().chapters.find(c => c.id === doc.entityId)
+      if (ch && t && ch.title !== t) {
+        ch.title = t
+        await window.api.saveChapter({ id: ch.id, projectId: ch.projectId, title: t })
+        useAppStore.setState(state => ({
+          chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: t } : c)
+        }))
+      }
       if (textareaRef.current) {
         textareaRef.current.value = subTab === 'outline' ? parsed.outline : parsed.content
       }
@@ -155,6 +168,17 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       outlineRef.current = v
     } else {
       contentRef.current = v
+      // 从正文中提取标题同步到侧栏
+      const titleMatch = v.match(/^#\s+(.+)/m)
+      if (titleMatch) {
+        const newTitle = titleMatch[1].trim()
+        setTitle(newTitle)
+        setDocTitle(doc.id, newTitle)
+        preambleRef.current = replaceTitleInPreamble(preambleRef.current, newTitle)
+        useAppStore.setState(state => ({
+          chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: newTitle } : c)
+        }))
+      }
     }
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
     setDocContent(doc.id, full)
@@ -167,6 +191,10 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
     setDocContent(doc.id, full)
     setDocTitle(doc.id, v)
+    // 立即更新侧栏章节标题
+    useAppStore.setState(state => ({
+      chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: v } : c)
+    }))
   }
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -285,6 +313,83 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       alert('生成失败：' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setGeneratingOutline(false)
+    }
+  }
+
+  const handleGenerateContent = async (): Promise<void> => {
+    if (!currentProject) return
+
+    // 重新加载章节确保获取最新数据
+    await loadChapters(currentProject.id)
+    const chapter = chapters.find(c => c.id === doc.entityId)
+    if (!chapter) return
+
+    // 如果 JSON 中 outline 为空，尝试从 MD 文件读取
+    let outline = chapter.outline?.trim()
+    if (!outline) {
+      try {
+        const mdContent = await window.api.readDoc?.(currentProject.id, 'chapter', chapter.id)
+        if (mdContent) {
+          const match = mdContent.match(/## 本章概要\r?\n([\s\S]*?)(?=\r?\n## |\r?\n$)/)
+          const mdOutline = match?.[1]?.trim()
+          if (mdOutline) {
+            outline = mdOutline
+            // 同步回 JSON
+            await window.api.saveChapterOutline(chapter.id, outline)
+          }
+        }
+      } catch { /* ignore read errors */ }
+    }
+
+    if (!outline) {
+      alert('本章暂无大纲，请先填写或生成大纲。')
+      return
+    }
+
+    const prevChapters = chapters
+      .filter((c) => c.sortOrder < chapter.sortOrder && c.id !== chapter.id)
+      .map((c) => ({
+        title: c.title,
+        content: c.content
+      }))
+
+    // 流式输出到正文编辑器
+    let streamedContent = ''
+    const cleanup = window.api.onAiChunk?.((chunk: string) => {
+      streamedContent += chunk
+      contentRef.current = streamedContent
+      if (textareaRef.current && subTab === 'content') {
+        textareaRef.current.value = streamedContent
+      }
+    })
+
+    let content
+    try {
+      content = await aiGenerateChapter({
+        projectId: currentProject.id,
+        chapterId: chapter.id,
+        synopsis: currentProject.synopsis,
+        chapterTitle: chapter.title,
+        chapterOutline: outline,
+        previousChapters: prevChapters
+      })
+    } finally {
+      cleanup?.()
+    }
+
+    if (content) {
+      // 用最终完整结果覆盖（确保无遗漏）
+      contentRef.current = content
+      if (textareaRef.current && subTab === 'content') {
+        textareaRef.current.value = content
+      }
+      await window.api.saveChapter({
+        id: chapter.id,
+        projectId: currentProject.id,
+        title: chapter.title,
+        content,
+        outline
+      })
     }
   }
 
@@ -427,6 +532,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 <Sparkles size={12} />
                 {generatingOutline ? '生成中...' : '从正文生成大纲'}
               </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors"
+                style={{ color: 'var(--color-text)' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => { setContextMenu(null); setGenContentDialog(true) }}
+              >
+                <Sparkles size={12} />
+                AI 生成正文
+              </button>
             </>
           )}
           <div className="h-px my-1 mx-2" style={{ backgroundColor: 'var(--color-border-light)' }} />
@@ -457,10 +572,38 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       {currentProject && (
         <AIChatDialog
           open={showAiChatOutline}
-          onClose={() => setShowAiChatOutline(false)}
+          onClose={() => {
+            setShowAiChatOutline(false)
+            // 关闭后刷新大纲显示
+            const ch = useAppStore.getState().chapters.find(c => c.id === doc.entityId)
+            if (ch?.outline && ch.outline !== outlineRef.current) {
+              outlineRef.current = ch.outline
+              if (textareaRef.current && subTab === 'outline') {
+                textareaRef.current.value = ch.outline
+              }
+            }
+          }}
           entityType="chapterOutline"
           projectId={currentProject.id}
           chapterId={doc.entityId}
+        />
+      )}
+
+      {/* AI 生成正文 */}
+      {genContentDialog && (
+        <AIGenerateDialog
+          title="AI 生成正文"
+          chapterTitle={doc.title}
+          onClose={() => setGenContentDialog(false)}
+          onStart={async () => {
+            try {
+              await handleGenerateContent()
+            } catch (err) {
+              throw err
+            } finally {
+              setGenContentDialog(false)
+            }
+          }}
         />
       )}
     </div>

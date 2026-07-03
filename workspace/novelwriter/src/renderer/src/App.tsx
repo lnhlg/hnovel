@@ -15,6 +15,8 @@ import CharacterRelationsPanel from './components/CharacterRelationsPanel'
 import InspirationsPanel from './components/InspirationsPanel'
 import WritingLogsPanel from './components/WritingLogsPanel'
 import ReferencesPanel from './components/ReferencesPanel'
+import WritingStylesPanel from './components/WritingStylesPanel'
+import RightToolbar from './components/layout/RightToolbar'
 import TitleBar from './components/layout/TitleBar'
 import StatusBar from './components/layout/StatusBar'
 import Sidebar from './components/layout/Sidebar'
@@ -51,6 +53,7 @@ function App(): JSX.Element {
   const openDocs = useLayoutStore((s) => s.openDocs)
   const activeDocId = useLayoutStore((s) => s.activeDocId)
   const setDocDirty = useLayoutStore((s) => s.setDocDirty)
+  const setDocTitle = useLayoutStore((s) => s.setDocTitle)
   const setDocContent = useLayoutStore((s) => s.setDocContent)
   const closeAllDocs = useLayoutStore((s) => s.closeAllDocs)
 
@@ -76,7 +79,25 @@ function App(): JSX.Element {
       const result = await window.api.saveDoc?.(currentProject.id, doc.type, doc.entityId, doc.content)
       if (result?.success) {
         setDocDirty(doc.id, false)
-        console.log('[App] 文档保存成功:', doc.title)
+        // 从正文中提取标题，更新标签和侧栏
+        if (doc.type === 'chapter') {
+          const titleMatch = doc.content.match(/^#\s+(.+)/m)
+          const extractedTitle = titleMatch?.[1]?.trim()
+          if (extractedTitle && extractedTitle !== doc.title) {
+            setDocTitle(doc.id, extractedTitle)
+            // 即时同步到侧栏
+            useAppStore.setState(state => ({
+              chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: extractedTitle } : c)
+            }))
+          }
+          console.log('[App] 文档保存成功:', extractedTitle || doc.title)
+        } else {
+          const newTitle = (result as Record<string,string>).newTitle || (result as Record<string,string>).newName
+          if (newTitle && newTitle !== doc.title) {
+            setDocTitle(doc.id, newTitle)
+          }
+          console.log('[App] 文档保存成功:', newTitle || doc.title)
+        }
         if (doc.type === 'chapter') {
           await loadChapters(currentProject.id)
         } else if (doc.type === 'character' || doc.type === 'characters') {
@@ -234,11 +255,16 @@ function App(): JSX.Element {
               <WritingLogsPanel />
             ) : sidebarView === 'references' ? (
               <ReferencesPanel />
+            ) : sidebarView === 'writingStyles' ? (
+              <WritingStylesPanel />
             ) : (
               <OutlinePanel />
             )}
           </Panel>
         </PanelGroup>
+
+        {/* 右侧工具栏 */}
+        <RightToolbar />
       </div>
 
       {/* 状态栏 */}
