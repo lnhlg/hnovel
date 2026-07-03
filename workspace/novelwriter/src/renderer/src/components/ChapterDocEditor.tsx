@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Upload, Sparkles, UserPlus, MessageSquare } from 'lucide-react'
+import { Upload, Sparkles, UserPlus, MessageSquare, ChevronDown } from 'lucide-react'
 import { useLayoutStore, type OpenDoc } from '../store/layout'
 import { useAppStore } from '../store/app'
 import ExtractCharactersDialog from './dialogs/ExtractCharactersDialog'
@@ -70,6 +70,10 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const aiGenerateChapter = useAppStore((s) => s.aiGenerateChapter)
   const loadChapters = useAppStore((s) => s.loadChapters)
   const chapters = useAppStore((s) => s.chapters)
+  const chatModel = useAppStore((s) => s.chatModel)
+  const chatReasoningEffort = useAppStore((s) => s.chatReasoningEffort)
+  const setChatModel = useAppStore((s) => s.setChatModel)
+  const setChatReasoningEffort = useAppStore((s) => s.setChatReasoningEffort)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [loading, setLoading] = useState(false)
@@ -81,6 +85,25 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [extractText, setExtractText] = useState('')
   const [showAiChatOutline, setShowAiChatOutline] = useState(false)
   const [genContentDialog, setGenContentDialog] = useState(false)
+  const [showAiPolish, setShowAiPolish] = useState(false)
+  const [polishInstruction, setPolishInstruction] = useState('')
+  const [polishing, setPolishing] = useState(false)
+  const [polishResult, setPolishResult] = useState('')
+  const [polishModels, setPolishModels] = useState<{ id: string; name: string }[]>([])
+  const [polishModel, setPolishModel] = useState('')
+  const [polishEffort, setPolishEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium')
+  const [showPolishModelDropdown, setShowPolishModelDropdown] = useState(false)
+  const [showPolishEffortDropdown, setShowPolishEffortDropdown] = useState(false)
+  const [polishHistory, setPolishHistory] = useState<string[]>([])
+  const [showPolishHistory, setShowPolishHistory] = useState(false)
+
+  // 加载润色指令历史
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('novelwriter-polish-history')
+      if (raw) setPolishHistory(JSON.parse(raw))
+    } catch {}
+  }, [])
 
   // Refs to hold section text (avoid cursor jump from re-parsing on every keystroke)
   const outlineRef = useRef<string>('')
@@ -205,6 +228,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const source = selectedText || (subTab === 'outline' ? outlineRef.current : contentRef.current)
     setExtractText(source)
     setContextMenu({ x: e.clientX, y: e.clientY })
+    setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
   const handleExtractCharacters = () => {
@@ -314,6 +338,48 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     } finally {
       setGeneratingOutline(false)
     }
+  }
+
+  const handleAiPolish = async (): Promise<void> => {
+    if (!polishInstruction.trim() || !extractText.trim() || polishing) return
+    setPolishing(true)
+    setPolishResult('')
+    try {
+      const messages = [
+        { role: 'system', content: '你是一位专业的小说文本润色编辑。请根据用户的要求，对给定的文本进行润色加工。只返回润色后的文本，不要加任何解释或标记。' },
+        { role: 'user', content: `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}` }
+      ]
+      const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, reasoningEffort: polishEffort })
+      if (result) {
+        setPolishResult(result.trim())
+        // 保存指令到历史
+        const h = [polishInstruction, ...polishHistory.filter(x => x !== polishInstruction)].slice(0, 10)
+        setPolishHistory(h)
+        localStorage.setItem('novelwriter-polish-history', JSON.stringify(h))
+      }
+    } catch (err) {
+      alert('润色失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setPolishing(false)
+    }
+  }
+
+  const handleApplyPolish = (): void => {
+    if (!polishResult || !textareaRef.current) return
+    const ta = textareaRef.current
+    const before = ta.value.substring(0, ta.selectionStart)
+    const after = ta.value.substring(ta.selectionEnd)
+    ta.value = before + polishResult + after
+    // 同步到 ref
+    if (subTab === 'outline') outlineRef.current = ta.value
+    else contentRef.current = ta.value
+    const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+    setDocContent(doc.id, full)
+    setShowAiPolish(false)
+    setPolishResult('')
+    setPolishInstruction('')
+    // 恢复焦点到 textarea
+    setTimeout(() => ta.focus(), 0)
   }
 
   const handleGenerateContent = async (): Promise<void> => {
@@ -542,6 +608,26 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 <Sparkles size={12} />
                 AI 生成正文
               </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors"
+                style={{ color: 'var(--color-text)' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => {
+                  setContextMenu(null)
+                  setShowAiPolish(true)
+                  setPolishResult('')
+                  setPolishInstruction('')
+                  setPolishModel(chatModel || '')
+                  setPolishEffort(chatReasoningEffort)
+                  window.api.listModels?.().then((list: { id: string; name: string }[]) => {
+                    if (list?.[0]) setPolishModels(list)
+                  }).catch(() => {})
+                }}
+              >
+                <Sparkles size={12} />
+                AI 润色
+              </button>
             </>
           )}
           <div className="h-px my-1 mx-2" style={{ backgroundColor: 'var(--color-border-light)' }} />
@@ -605,6 +691,131 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
             }
           }}
         />
+      )}
+
+      {/* AI 润色对话框 */}
+      {showAiPolish && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-[800px] max-h-[90vh] rounded-xl bg-white p-6 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--color-surface)' }}>
+            <h2 className="mb-1 text-lg font-semibold" style={{ color: 'var(--color-text)' }}>AI 润色</h2>
+            <p className="mb-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              选中 {extractText.length} 个字符
+            </p>
+
+            {/* 模型选择器 + 推理力度 */}
+            <div className="flex items-center gap-2 mb-3">
+              {polishModels.length > 0 && (
+                <div className="relative">
+                  <button onClick={() => setShowPolishModelDropdown(!showPolishModelDropdown)}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-xs"
+                    style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', minWidth: 120 }}>
+                    <span className="truncate">{polishModel || '选择模型'}</span>
+                    <ChevronDown size={10} />
+                  </button>
+                  {showPolishModelDropdown && (
+                    <div className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-lg max-h-48 overflow-y-auto min-w-[160px]"
+                      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                      {polishModels.map(m => (
+                        <button key={m.id} onClick={() => { setPolishModel(m.id); setChatModel(m.id); setShowPolishModelDropdown(false) }}
+                          className="w-full px-3 py-1.5 text-left text-xs"
+                          style={{ color: polishModel === m.id ? 'var(--color-accent)' : 'var(--color-text)' }}>
+                          {m.name || m.id}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="relative">
+                <button onClick={() => setShowPolishEffortDropdown(!showPolishEffortDropdown)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs"
+                  style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                  <span>{polishEffort === 'low' ? '低' : polishEffort === 'medium' ? '中' : polishEffort === 'high' ? '高' : '最高'}</span>
+                  <ChevronDown size={10} />
+                </button>
+                {showPolishEffortDropdown && (
+                  <div className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-lg overflow-hidden"
+                    style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                    {(['low', 'medium', 'high', 'max'] as const).map(e => (
+                      <button key={e} onClick={() => { setPolishEffort(e); setChatReasoningEffort(e); setShowPolishEffortDropdown(false) }}
+                        className="w-full px-3 py-1.5 text-left text-xs"
+                        style={{ color: polishEffort === e ? 'var(--color-accent)' : 'var(--color-text)' }}>
+                        {e === 'low' ? '低' : e === 'medium' ? '中' : e === 'high' ? '高' : '最高(max)'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mb-2">
+              <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>原文</label>
+              <div className="max-h-56 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }}>
+                {extractText.slice(0, 1000)}{extractText.length > 1000 ? '...' : ''}
+              </div>
+            </div>
+
+            <div className="mb-3 relative">
+              <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>润色指令</label>
+              <textarea value={polishInstruction} onChange={e => setPolishInstruction(e.target.value)}
+                onFocus={() => polishHistory.length > 0 && setShowPolishHistory(true)}
+                onBlur={() => setTimeout(() => setShowPolishHistory(false), 200)}
+                className="w-full rounded border px-2 py-1.5 text-xs outline-none resize-none" rows={3}
+                style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-surface)' }}
+                placeholder="如：改得更文雅、增加景物描写、压缩到100字..." />
+              {showPolishHistory && polishHistory.length > 0 && (
+                <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-lg shadow-lg overflow-hidden"
+                  style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                  {polishHistory.slice(0, 8).map((h, i) => (
+                    <button key={i}
+                      onMouseDown={e => { e.preventDefault(); setPolishInstruction(h); setShowPolishHistory(false) }}
+                      className="w-full px-3 py-1.5 text-left text-xs truncate"
+                      style={{ color: 'var(--color-text)' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                      title={h}>
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {polishResult && (
+              <div className="mb-3 flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>润色结果</label>
+                  <button onClick={handleAiPolish} disabled={polishing}
+                    className="text-xs flex items-center gap-1 px-2 py-0.5 rounded"
+                    style={{ color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}>
+                    {polishing ? '重新生成中...' : '🔄 重新生成'}
+                  </button>
+                </div>
+                <div className="max-h-48 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap" style={{ color: 'var(--color-text)', borderColor: 'var(--color-accent)', backgroundColor: 'var(--color-sidebar)' }}>
+                  {polishResult}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setShowAiPolish(false); setPolishResult(''); setPolishInstruction(''); setTimeout(() => textareaRef.current?.focus(), 0) }}
+                className="rounded border px-4 py-1.5 text-xs" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)' }}>
+                取消
+              </button>
+              {polishResult ? (
+                <button onClick={handleApplyPolish}
+                  className="rounded px-4 py-1.5 text-xs" style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}>
+                  应用并替换原文
+                </button>
+              ) : (
+                <button onClick={handleAiPolish} disabled={polishing || !polishInstruction.trim()}
+                  className="rounded px-4 py-1.5 text-xs" style={{ backgroundColor: 'var(--color-accent)', color: '#fff', opacity: polishing || !polishInstruction.trim() ? 0.5 : 1 }}>
+                  {polishing ? '润色中...' : '开始润色'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

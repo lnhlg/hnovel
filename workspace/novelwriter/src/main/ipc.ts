@@ -2381,8 +2381,8 @@ export function registerDocHandlers(): void {
         const index = chapters.findIndex((c) => c.id === entityId)
 
         const titleMatch = content.match(/^#\s+(.+)/m)
-        const outlineMatch = content.match(/## 本章概要\s*\n([\s\S]*?)(?=##|$)/)
-        const contentMatch = content.match(/## 正文内容\s*\n([\s\S]*?)$/)
+        const outlineMatch = content.match(/## 本章概要\r?\n([\s\S]*?)(?=\r?\n## |\r?\n$)/)
+        const contentMatch = content.match(/## 正文内容\r?\n([\s\S]*?)$/)
 
         let rawTitle = titleMatch?.[1]?.trim() || chapter.title
         rawTitle = stripChapterTitle(rawTitle)
