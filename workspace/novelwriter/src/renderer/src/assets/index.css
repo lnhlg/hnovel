@@ -1,0 +1,306 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== CSS 自定义属性 / 设计令牌 ===== */
+:root,
+[data-theme="light"] {
+  /* 颜色 - 浅色主题 */
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;
+  --color-border-light: #f0f1f3;
+
+  --color-text: #1f2937;
+  --color-text-secondary: #4b5563;
+  --color-text-muted: #9ca3af;
+  --color-text-dim: #d1d5db;
+
+  --color-accent: #5c7cfa;
+  --color-accent-hover: #4c6ef5;
+  --color-accent-light: #f0f4ff;
+
+  --color-titlebar: #f0f1f3;
+  --color-titlebar-text: #374151;
+  --color-activity-bar: #e8e9eb;
+  --color-activity-icon: #6b7280;
+  --color-activity-icon-active: #5c7cfa;
+  --color-activity-indicator: #5c7cfa;
+  --color-sidebar: #ffffff;
+  --color-statusbar: #e8e9eb;
+  --color-statusbar-text: #6b7280;
+
+  --color-hover: rgba(0, 0, 0, 0.04);
+  --color-active: rgba(92, 124, 250, 0.1);
+
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-success: #22c55e;
+
+  /* 尺寸 */
+  --height-titlebar: 36px;
+  --height-statusbar: 22px;
+  --width-activitybar: 40px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* 字体 */
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+
+  /* 过渡 */
+  --transition-fast: 0.15s ease;
+}
+
+/* ===== 深色主题（类 Vela galaxy/dark） ===== */
+[data-theme="dark"] {
+  --color-bg: #1a1b1e;
+  --color-surface: #25262b;
+  --color-border: #373a40;
+  --color-border-light: #2c2e33;
+
+  --color-text: #e4e5e7;
+  --color-text-secondary: #b0b1b6;
+  --color-text-muted: #6b6f77;
+  --color-text-dim: #4a4d54;
+
+  --color-accent: #748ffc;
+  --color-accent-hover: #91a7ff;
+  --color-accent-light: rgba(116, 143, 252, 0.12);
+
+  --color-titlebar: #1e1f22;
+  --color-titlebar-text: #c4c5c9;
+  --color-activity-bar: #1a1b1e;
+  --color-activity-icon: #6b6f77;
+  --color-activity-icon-active: #748ffc;
+  --color-activity-indicator: #748ffc;
+  --color-sidebar: #25262b;
+  --color-statusbar: #1a1b1e;
+  --color-statusbar-text: #6b6f77;
+
+  --color-hover: rgba(255, 255, 255, 0.06);
+  --color-active: rgba(116, 143, 252, 0.15);
+
+  --color-danger: #f87171;
+  --color-warning: #fbbf24;
+  --color-success: #4ade80;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== 通用工具类 ===== */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== 品牌渐变色 ===== */
+.brand-gradient {
+  background: linear-gradient(135deg, #5c7cfa, #748ffc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ===== 图标按钮 ===== */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  transition: all var(--transition-fast);
+}
+.icon-btn:hover {
+  background-color: var(--color-hover);
+  color: var(--color-text);
+}
+
+/* ===== 按钮变体 ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary {
+  background-color: var(--color-accent);
+  color: white;
+}
+.btn-primary:hover {
+  background-color: var(--color-accent-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+.btn-ghost:hover {
+  background-color: var(--color-hover);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--color-danger);
+}
+.btn-danger:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+}
+
+/* ===== 输入框 ===== */
+.input {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  outline: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition: border-color var(--transition-fast);
+}
+.input:focus {
+  border-color: var(--color-accent);
+}
+
+.textarea {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  outline: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+  transition: border-color var(--transition-fast);
+}
+.textarea:focus {
+  border-color: var(--color-accent);
+}
+
+/* ===== 面板通用 ===== */
+.panel {
+  background-color: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+
+/* react-resizable-panels Separator — 必须给宽度才有交互区 */
+[data-group] > [data-separator] {
+  width: 8px;
+  flex-basis: 8px !important;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color 0.15s;
+}
+[data-group] > [data-separator]:hover,
+[data-group] > [data-separator][data-separator="active"] {
+  background-color: var(--color-accent);
+  opacity: 0.4;
+}
+
+/* ===== Tiptap ProseMirror 样式 ===== */
+.ProseMirror {
+  min-height: 60vh;
+  outline: none;
+  line-height: 1.8;
+  padding: 16px 24px;
+}
+.ProseMirror p { margin: 0.4em 0; color: var(--color-text); }
+.ProseMirror h1 { font-size: 1.5rem; font-weight: 700; margin: 1em 0 0.5em; color: var(--color-text); }
+.ProseMirror h2 { font-size: 1.25rem; font-weight: 600; margin: 0.8em 0 0.4em; color: var(--color-text); }
+.ProseMirror h3 { font-size: 1.1rem; font-weight: 600; margin: 0.6em 0 0.3em; color: var(--color-text); }
+.ProseMirror ul, .ProseMirror ol { padding-left: 1.5em; margin: 0.5em 0; }
+.ProseMirror li { margin: 0.2em 0; color: var(--color-text); }
+.ProseMirror blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.ProseMirror pre {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75em 1em;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+  overflow-x: auto;
+}
+.ProseMirror code {
+  background: var(--color-bg);
+  padding: 0.15em 0.3em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  color: var(--color-accent);
+}
+.ProseMirror pre code { background: none; padding: 0; color: inherit; }
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1.5em 0;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--color-text-dim);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.ProseMirror table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.ProseMirror th, .ProseMirror td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.6em;
+  text-align: left;
+  color: var(--color-text);
+}
+.ProseMirror th { background: var(--color-hover); font-weight: 600; }

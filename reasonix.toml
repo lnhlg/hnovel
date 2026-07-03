@@ -1,0 +1,2 @@
+[permissions]
+allow = ["Bash(ls -la \"F:/work/self/hnovel/\" 2>/dev/null || echo \"F:/work/self/hnovel/ 不存在\")", "Bash(ls -la \"F:/work/self/hnovel/workspace/novelwriter/\" 2>/dev/null || echo \"workspace/novelwriter 不存在\")"]
