@@ -362,28 +362,56 @@ export default function Sidebar(): JSX.Element {
                       )}
                     </div>
 
-                    {/* 其他分类节点 */}
-                    {categories.map((cat) => {
-                      const isCatActive = sidebarView === cat.id
-                      const Icon = cat.icon
-                      return (
-                        <div
-                          key={cat.id}
-                          onClick={() => handleSelectCategory(cat.id)}
-                          className="flex items-center gap-1.5 px-2 py-1 text-xs cursor-pointer rounded-sm transition-colors"
-                          style={{
-                            backgroundColor: isCatActive ? 'var(--color-active)' : 'transparent',
-                            color: isCatActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                          }}
-                          onMouseEnter={e => { if (!isCatActive) e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
-                          onMouseLeave={e => { if (!isCatActive) e.currentTarget.style.backgroundColor = 'transparent' }}
-                        >
-                          <Icon size={12} />
-                          <span className="flex-1">{cat.label}</span>
-                          <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>{cat.count}</span>
+                    {/* 其他分类节点——可展开子项 */}
+                    {(() => {
+                      const expandableCats: Array<{
+                        id: string; label: string; icon: React.ElementType; items: Array<{id: string; title: string; subtitle?: string}>; docType: DocType
+                      }> = [
+                        { id: 'characters', label: '角色', icon: Users, docType: 'character', items: characters.map(c => ({ id: c.id, title: c.name, subtitle: c.role })) },
+                        { id: 'world', label: '世界观', icon: Globe, docType: 'worldSetting', items: worldSettings.map(w => ({ id: w.id, title: w.key, subtitle: w.category })) },
+                        { id: 'timeline', label: '时间线', icon: Clock, docType: 'timeline', items: timelines.map(t => ({ id: t.id, title: t.title })) },
+                        { id: 'locations', label: '地点场景', icon: MapPin, docType: 'location', items: locations.map(l => ({ id: l.id, title: l.name, subtitle: l.type })) },
+                        { id: 'relations', label: '角色关系', icon: Link2, docType: 'characterRelations', items: characterRelations.map(r => ({ id: r.id, title: `${r.characterId1} ↔ ${r.characterId2}` })) },
+                        { id: 'inspirations', label: '灵感记录', icon: Lightbulb, docType: 'inspirations', items: inspirations.map(i => ({ id: i.id, title: i.title })) },
+                        { id: 'references', label: '参考资料', icon: BookOpen, docType: 'references', items: references.map(r => ({ id: r.id, title: r.title })) },
+                        { id: 'logs', label: '写作日志', icon: FileText, docType: 'writingLogs', items: writingLogs.map(l => ({ id: l.id, title: '日志 #' + l.createdAt?.slice(0,10) })) },
+                      ]
+                      return expandableCats.map(cat => (
+                        <div key={cat.id}>
+                          <div
+                            onClick={() => toggleSection(cat.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs cursor-pointer rounded-sm transition-colors"
+                            style={{ color: 'var(--color-text-secondary)' }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            {expandedSections.has(cat.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                            <cat.icon size={12} />
+                            <span className="flex-1">{cat.label}</span>
+                            <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>{cat.items.length}</span>
+                          </div>
+                          {expandedSections.has(cat.id) && (
+                            <div className="ml-5 border-l-2" style={{ borderColor: 'var(--color-border-light)' }}>
+                              {cat.items.map(item => (
+                                <div key={item.id}
+                                  onClick={() => openDocTab(cat.docType, item.id, item.title)}
+                                  className="flex items-center gap-1 px-2 py-1 text-xs cursor-pointer rounded-sm transition-colors"
+                                  style={{ color: 'var(--color-text-secondary)' }}
+                                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                  <span className="truncate">{item.title}</span>
+                                  {item.subtitle && <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>({item.subtitle})</span>}
+                                </div>
+                              ))}
+                              {cat.items.length === 0 && (
+                                <div className="px-2 py-1 text-xs" style={{ color: 'var(--color-text-dim)' }}>暂无{cat.label}</div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      )
-                    }                    )}
+                      ))
+                    })()}
                   </div>
                 )}
               </div>
