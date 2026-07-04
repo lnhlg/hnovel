@@ -61,10 +61,28 @@ function replaceTitleInPreamble(preamble: string, newTitle: string): string {
   return `# ${newTitle}\n\n${preamble}`
 }
 
+// 从正文内容开头解析章节标题，如 "第1章 惊变" / "第一章 惊变" / "Chapter 1 惊变"
+// 返回完整标题行（含编号前缀），由侧栏显示时统一裁前缀；未匹配返回空串
+function extractTitleFromBody(body: string): string {
+  if (!body) return ''
+  const lines = body.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const m = trimmed.match(/^第\s*[零一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟\d]+\s*[章回节部]\s*[·•.、．：:\s-]*(.+)$/)
+    if (m && m[1].trim()) return trimmed
+    const m2 = trimmed.match(/^[Cc]hapter\s+\d+[\s-:：]*(.+)$/i)
+    if (m2 && m2[1].trim()) return trimmed
+    return ''
+  }
+  return ''
+}
+
 export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.Element {
   const setDocContent = useLayoutStore((s) => s.setDocContent)
   const setDocDirty = useLayoutStore((s) => s.setDocDirty)
   const setDocTitle = useLayoutStore((s) => s.setDocTitle)
+  const setDocChapterSubTab = useLayoutStore((s) => s.setDocChapterSubTab)
   const currentProject = useAppStore((s) => s.currentProject)
   const aiGenerate = useAppStore((s) => s.aiGenerate)
   const aiGenerateChapter = useAppStore((s) => s.aiGenerateChapter)
@@ -79,7 +97,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [loading, setLoading] = useState(false)
   const [generatingOutline, setGeneratingOutline] = useState(false)
-  const [subTab, setSubTab] = useState<'outline' | 'content'>('outline')
+  const [subTab, setSubTab] = useState<'outline' | 'content'>(doc.chapterSubTab || 'outline')
   const [title, setTitle] = useState(doc.title)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showExtract, setShowExtract] = useState(false)
@@ -114,6 +132,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const contentRef = useRef<string>('')
   const preambleRef = useRef<string>('')
   const loadedRef = useRef<string>('')
+  const titleRef = useRef(title)
 
   // Initial load: fetch doc content via IPC if empty, then parse into sections
   useEffect(() => {
@@ -140,9 +159,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       preambleRef.current = parsed.preamble
       outlineRef.current = parsed.outline
       contentRef.current = parsed.content
-      const t = (extractTitle(parsed.preamble) || doc.title).replace(/^(?:\d+\.[\s-]*|第\s*[一二三四五六七八九十百千\d]+\s*章\s*[·•.、．:\s-]*)+/, '').trim()
+      // 标题优先级：正文开头的章节标题（如"第1章 惊变"）> preamble H1 > doc.title
+      const bodyTitle = extractTitleFromBody(parsed.content)
+      const t = (bodyTitle || extractTitle(parsed.preamble) || doc.title).trim()
+      titleRef.current = t
       setTitle(t)
-      // 如果 MD 标题与 JSON 不一致，以 MD 为准同步回 JSON 和侧栏
+      // 若正文有章节标题，同步到 preamble H1，保证后续保存时三者一致
+      if (bodyTitle) {
+        preambleRef.current = replaceTitleInPreamble(preambleRef.current, bodyTitle)
+      }
+      // 如果解析出的标题与 JSON 不一致，以解析结果为准同步回 JSON 和侧栏
       const ch = useAppStore.getState().chapters.find(c => c.id === doc.entityId)
       if (ch && t && ch.title !== t) {
         ch.title = t
@@ -171,23 +197,38 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
+        // 保存前：若正文开头有章节标题（如"第1章 惊变"），同步到 preamble H1 和标题输入框，
+        // 确保 JSON 中 chapter.content 与 MD 文件、侧栏三者标题一致，避免重载后回退
+        const bodyTitle = extractTitleFromBody(contentRef.current)
+        if (bodyTitle) {
+          preambleRef.current = replaceTitleInPreamble(preambleRef.current, bodyTitle)
+          titleRef.current = bodyTitle
+          setTitle(bodyTitle)
+          setDocTitle(doc.id, bodyTitle)
+        }
         const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
         setDocContent(doc.id, full)
         window.api.saveChapter({
           id: doc.entityId,
           projectId: currentProject?.id ?? '',
-          title,
-          content: contentRef.current,
+          title: titleRef.current,
+          content: full,
           outline: outlineRef.current
         }).then(() => {
           if (currentProject) loadChapters(currentProject.id)
+          // 强制更新侧栏（用同步后的标题）
+          if (bodyTitle) {
+            useAppStore.setState(state => ({
+              chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: bodyTitle } : c)
+            }))
+          }
           setDocDirty(doc.id, false)
         }).catch(console.error)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [title, currentProject, doc.entityId, doc.id])
+  }, [currentProject, doc.entityId, doc.id])
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const v = e.target.value
@@ -195,11 +236,13 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       outlineRef.current = v
     } else {
       contentRef.current = v
-      // 从正文中提取标题同步到侧栏
+      // 标题优先级：正文开头的章节标题（如"第1章 惊变"）> 正文里的 # H1 标题
+      const bodyTitle = extractTitleFromBody(v)
       const titleMatch = v.match(/^#\s+(.+)/m)
-      if (titleMatch) {
-        const newTitle = titleMatch[1].trim()
+      const newTitle = bodyTitle || (titleMatch ? titleMatch[1].trim() : '')
+      if (newTitle && newTitle !== titleRef.current) {
         setTitle(newTitle)
+        titleRef.current = newTitle
         setDocTitle(doc.id, newTitle)
         preambleRef.current = replaceTitleInPreamble(preambleRef.current, newTitle)
         useAppStore.setState(state => ({
@@ -214,6 +257,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const v = e.target.value
     setTitle(v)
+    titleRef.current = v
     preambleRef.current = replaceTitleInPreamble(preambleRef.current, v)
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
     setDocContent(doc.id, full)
@@ -548,7 +592,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         style={{ borderBottom: '1px solid var(--color-border-light)' }}
       >
         <button
-          onClick={() => setSubTab('outline')}
+          onClick={() => { setSubTab('outline'); setDocChapterSubTab(doc.id, 'outline') }}
           className="px-3 py-1 text-xs rounded transition-colors"
           style={{
             color: subTab === 'outline' ? 'var(--color-accent)' : 'var(--color-text-muted)',
@@ -559,7 +603,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           大纲
         </button>
         <button
-          onClick={() => setSubTab('content')}
+          onClick={() => { setSubTab('content'); setDocChapterSubTab(doc.id, 'content') }}
           className="px-3 py-1 text-xs rounded transition-colors"
           style={{
             color: subTab === 'content' ? 'var(--color-accent)' : 'var(--color-text-muted)',

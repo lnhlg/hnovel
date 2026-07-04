@@ -26,6 +26,31 @@ import ChapterDocEditor from './components/ChapterDocEditor'
 import CharacterRelationGraph from './components/CharacterRelationGraph'
 import type { OpenDoc } from './store/layout'
 
+// 从正文内容开头解析章节标题，如 "第1章 惊变" / "第一章 惊变" / "Chapter 1 惊变"
+function extractTitleFromBody(body: string): string {
+  if (!body) return ''
+  const lines = body.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const m = trimmed.match(/^第\s*[零一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟\d]+\s*[章回节部]\s*[·•.、．：:\s-]*(.+)$/)
+    if (m && m[1].trim()) return trimmed
+    const m2 = trimmed.match(/^[Cc]hapter\s+\d+[\s-:：]*(.+)$/i)
+    if (m2 && m2[1].trim()) return trimmed
+    return ''
+  }
+  return ''
+}
+
+// 从完整 MD 文档中提取正文区域起始的章节标题
+function extractTitleFromBodyMD(fullContent: string): string {
+  if (!fullContent) return ''
+  const header = '## 正文内容'
+  const idx = fullContent.indexOf(header)
+  if (idx === -1) return ''
+  return extractTitleFromBody(fullContent.substring(idx + header.length))
+}
+
 function App(): JSX.Element {
   const {
     currentProject,
@@ -79,10 +104,11 @@ function App(): JSX.Element {
       const result = await window.api.saveDoc?.(currentProject.id, doc.type, doc.entityId, doc.content)
       if (result?.success) {
         setDocDirty(doc.id, false)
-        // 从正文中提取标题，更新标签和侧栏
+        // 从正文中提取标题，更新标签和侧栏（优先正文开头的章节标题，其次 preamble H1）
         if (doc.type === 'chapter') {
+          const bodyTitle = extractTitleFromBodyMD(doc.content)
           const titleMatch = doc.content.match(/^#\s+(.+)/m)
-          const extractedTitle = titleMatch?.[1]?.trim()
+          const extractedTitle = bodyTitle || titleMatch?.[1]?.trim()
           if (extractedTitle && extractedTitle !== doc.title) {
             setDocTitle(doc.id, extractedTitle)
             // 即时同步到侧栏

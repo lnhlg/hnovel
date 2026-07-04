@@ -11,6 +11,7 @@ export interface OpenDoc {
   entityId: string
   content: string
   dirty: boolean
+  chapterSubTab?: 'outline' | 'content'
 }
 
 interface LayoutState {
@@ -25,6 +26,7 @@ interface LayoutState {
   setDocContent: (id: string, content: string) => void
   setDocDirty: (id: string, dirty: boolean) => void
   setDocTitle: (id: string, title: string) => void
+  setDocChapterSubTab: (id: string, subTab: 'outline' | 'content') => void
   closeAllDocs: () => void
 }
 
@@ -89,6 +91,14 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     set((state) => ({
       openDocs: state.openDocs.map((d) =>
         d.id === id ? { ...d, title } : d
+      )
+    }))
+  },
+
+  setDocChapterSubTab: (id, subTab) => {
+    set((state) => ({
+      openDocs: state.openDocs.map((d) =>
+        d.id === id ? { ...d, chapterSubTab: subTab } : d
       )
     }))
   },

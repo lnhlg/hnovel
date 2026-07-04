@@ -90,6 +90,32 @@ function now(): string {
   return new Date().toISOString()
 }
 
+// 从正文内容开头解析章节标题，如 "第1章 惊变" / "第一章 惊变" / "Chapter 1 惊变"
+// 返回完整标题行（含编号前缀），由侧栏显示时统一裁前缀；未匹配返回空串
+function extractTitleFromBody(body: string): string {
+  if (!body) return ''
+  const lines = body.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const m = trimmed.match(/^第\s*[零一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟\d]+\s*[章回节部]\s*[·•.、．：:\s-]*(.+)$/)
+    if (m && m[1].trim()) return trimmed
+    const m2 = trimmed.match(/^[Cc]hapter\s+\d+[\s-:：]*(.+)$/i)
+    if (m2 && m2[1].trim()) return trimmed
+    return ''
+  }
+  return ''
+}
+
+// 从完整 MD 文档中提取正文区域起始的章节标题
+function extractTitleFromBodyMD(fullContent: string): string {
+  if (!fullContent) return ''
+  const header = '## 正文内容'
+  const idx = fullContent.indexOf(header)
+  if (idx === -1) return ''
+  return extractTitleFromBody(fullContent.substring(idx + header.length))
+}
+
 // 确保有可用的模型：如果当前模型为空，自动获取第一个
 async function ensureModel(provider: AIProvider): Promise<string> {
   let model = getCurrentModel()
@@ -229,14 +255,23 @@ export function registerChapterHandlers(): void {
     if (data.id) {
       const existing = loadChapters(data.projectId).find(c => c.id === data.id)
       if (!existing) return undefined
+      // 标题解析优先级：正文区域起始的章节标题（如"第1章 惊变"）> preamble H1 > data.title > existing.title
+      let resolvedTitle = existing.title
+      if (data.content) {
+        const bodyTitle = extractTitleFromBodyMD(data.content)
+        if (bodyTitle) {
+          resolvedTitle = bodyTitle
+        } else {
+          const preambleTitle = data.content.match(/^#\s+(.+)/m)?.[1]?.trim()
+          if (preambleTitle) resolvedTitle = preambleTitle
+          else if (data.title) resolvedTitle = data.title
+        }
+      } else if (data.title) {
+        resolvedTitle = data.title
+      }
       const chapter: Chapter = {
         ...existing,
-        // 优先从正文中提取标题
-        title: stripChapterTitle(
-          data.content
-            ? (data.content.match(/^#\s+(.+)/m)?.[1]?.trim() || data.title) ?? existing.title
-            : (data.title ?? existing.title)
-        ),
+        title: resolvedTitle,
         content: data.content ?? existing.content,
         outline: data.outline ?? existing.outline,
         sortOrder: data.sortOrder ?? existing.sortOrder,
@@ -264,7 +299,7 @@ export function registerChapterHandlers(): void {
       const sortOrder = chapters.length > 0 ? Math.max(...chapters.map(c => c.sortOrder)) + 1 : 0
       const chapter: Chapter = {
         id, projectId: data.projectId,
-        title: stripChapterTitle(data.title ?? '未命名章节'), content: data.content ?? '',
+        title: data.title ?? '未命名章节', content: data.content ?? '',
         outline: data.outline ?? '', sortOrder,
         wordCount: data.wordCount ?? 0, status: data.status ?? '草稿',
         draftVersion: data.draftVersion ?? 1,
@@ -2465,9 +2500,6 @@ export function registerDocHandlers(): void {
         const outlineMatch = content.match(/## 本章概要\r?\n([\s\S]*?)(?=\r?\n## |\r?\n$)/)
         const contentMatch = content.match(/## 正文内容\r?\n([\s\S]*?)$/)
 
-        let rawTitle = titleMatch?.[1]?.trim() || chapter.title
-        rawTitle = stripChapterTitle(rawTitle)
-        const newTitle = rawTitle
         const newOutline = outlineMatch?.[1]?.trim() || ''
         let newContent = contentMatch?.[1]?.trim() || ''
         // 修复旧 bug：正文区域嵌套了完整文档时，提取最里层正文
@@ -2475,6 +2507,12 @@ export function registerDocHandlers(): void {
         if (nestedContentIdx !== -1) {
           newContent = newContent.substring(nestedContentIdx + 7).trim()
         }
+
+        let rawTitle = titleMatch?.[1]?.trim() || chapter.title
+        // 优先使用正文区域起始的章节标题（如"第1章 惊变"）
+        const bodyTitle = extractTitleFromBody(newContent)
+        if (bodyTitle) rawTitle = bodyTitle
+        const newTitle = rawTitle
 
         const oldTitle = stripChapterTitle(chapter.title)
         const oldFileName = `${index + 1}. ${oldTitle.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '无标题'}.md`
