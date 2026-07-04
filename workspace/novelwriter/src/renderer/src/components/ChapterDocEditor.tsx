@@ -89,6 +89,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [polishInstruction, setPolishInstruction] = useState('')
   const [polishing, setPolishing] = useState(false)
   const [polishResult, setPolishResult] = useState('')
+  const [polishCtxBefore, setPolishCtxBefore] = useState('')
+  const [polishCtxAfter, setPolishCtxAfter] = useState('')
   const [polishModels, setPolishModels] = useState<{ id: string; name: string }[]>([])
   const [polishModel, setPolishModel] = useState('')
   const [polishEffort, setPolishEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium')
@@ -227,7 +229,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     // 如果没有选中文字，取当前标签页的全部内容
     const source = selectedText || (subTab === 'outline' ? outlineRef.current : contentRef.current)
     setExtractText(source)
-    setContextMenu({ x: e.clientX, y: e.clientY })
+    // 保存选中区域的上下文（前后各500字）
+    if (textarea && selectedText) {
+      const before = textarea.value.substring(Math.max(0, textarea.selectionStart - 500), textarea.selectionStart)
+      const after = textarea.value.substring(textarea.selectionEnd, Math.min(textarea.value.length, textarea.selectionEnd + 500))
+      setPolishCtxBefore(before)
+      setPolishCtxAfter(after)
+    } else {
+      setPolishCtxBefore('')
+      setPolishCtxAfter('')
+    }
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
@@ -345,9 +356,15 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     setPolishing(true)
     setPolishResult('')
     try {
+      const userMsg = polishCtxBefore || polishCtxAfter
+        ? `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
+          + (polishCtxBefore ? `上文（仅供理解上下文参考，不要润色）：\n${polishCtxBefore}\n\n` : '')
+          + `【目标文本（仅润色此段）】\n${extractText}\n\n`
+          + (polishCtxAfter ? `下文（仅供理解上下文参考，不要润色）：\n${polishCtxAfter}` : '')
+        : `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}`
       const messages = [
-        { role: 'system', content: '你是一位专业的小说文本润色编辑。请根据用户的要求，对给定的文本进行润色加工。只返回润色后的文本，不要加任何解释或标记。' },
-        { role: 'user', content: `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}` }
+        { role: 'system', content: '你是一位专业的小说文本润色编辑。请根据用户的要求，仅对标记为【目标文本】的段落进行润色加工。只返回润色后的文本，不要加任何解释或标记。' },
+        { role: 'user', content: userMsg }
       ]
       const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, reasoningEffort: polishEffort })
       if (result) {
@@ -367,9 +384,14 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const handleApplyPolish = (): void => {
     if (!polishResult || !textareaRef.current) return
     const ta = textareaRef.current
+    const scrollTop = ta.scrollTop
     const before = ta.value.substring(0, ta.selectionStart)
     const after = ta.value.substring(ta.selectionEnd)
     ta.value = before + polishResult + after
+    // 恢复滚动位置和光标
+    const newPos = (before + polishResult).length
+    ta.selectionStart = ta.selectionEnd = newPos
+    ta.scrollTop = scrollTop
     // 同步到 ref
     if (subTab === 'outline') outlineRef.current = ta.value
     else contentRef.current = ta.value

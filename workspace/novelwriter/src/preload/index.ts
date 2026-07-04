@@ -122,6 +122,11 @@ const api = {
   saveWritingStyle: (data: unknown) => ipcRenderer.invoke('writingStyle:save', data),
   deleteWritingStyle: (id: string) => ipcRenderer.invoke('writingStyle:delete', id),
 
+  // 技能（全局）
+  getSkills: () => ipcRenderer.invoke('skill:list'),
+  saveSkill: (data: unknown) => ipcRenderer.invoke('skill:save', data),
+  deleteSkill: (id: string) => ipcRenderer.invoke('skill:delete', id),
+
   // 文档读写（Markdown 原文）
   readDoc: (projectId: string, docType: string, entityId: string) =>
     ipcRenderer.invoke('doc:read', projectId, docType, entityId),

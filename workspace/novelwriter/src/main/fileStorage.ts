@@ -157,6 +157,17 @@ export interface WritingStyle {
   updatedAt: string
 }
 
+export interface Skill {
+  id: string
+  name: string
+  description: string
+  category: string
+  content: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AIProvider {
   id: string
   name: string
@@ -176,6 +187,8 @@ const PROJECTS_FILE = join(APP_DIR, 'projects.json')
 const AI_PROVIDERS_FILE = join(APP_DIR, 'aiProviders.json')
 const WRITING_STYLES_DIR = join(app.getAppPath(), 'writing-styles')
 const WRITING_STYLES_FILE = join(WRITING_STYLES_DIR, 'styles.json')
+const SKILLS_DIR = join(app.getAppPath(), 'skills')
+const SKILLS_FILE = join(SKILLS_DIR, 'skills.json')
 
 function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -455,6 +468,36 @@ export function getNextWritingStyleSortOrder(): number {
   return styles.length > 0 ? Math.max(...styles.map(s => s.sortOrder)) + 1 : 0
 }
 
+// ===================== 技能（全局） =====================
+
+export function loadSkills(): Skill[] {
+  return readJson<Skill[]>(SKILLS_FILE) ?? []
+}
+
+export function saveSkill(skill: Skill): Skill {
+  const skills = loadSkills()
+  const idx = skills.findIndex(s => s.id === skill.id)
+  if (idx >= 0) {
+    skills[idx] = skill
+  } else {
+    skills.push(skill)
+  }
+  ensureDir(SKILLS_DIR)
+  writeJson(SKILLS_FILE, skills)
+  return skill
+}
+
+export function deleteSkill(id: string): void {
+  const skills = loadSkills().filter(s => s.id !== id)
+  ensureDir(SKILLS_DIR)
+  writeJson(SKILLS_FILE, skills)
+}
+
+export function getNextSkillSortOrder(): number {
+  const skills = loadSkills()
+  return skills.length > 0 ? Math.max(...skills.map(s => s.sortOrder)) + 1 : 0
+}
+
 // ===================== 故事进展 =====================
 
 export function loadStoryProgress(projectId: string): string {
@@ -504,4 +547,6 @@ export async function initStorage(): Promise<void> {
   if (!existsSync(AI_PROVIDERS_FILE)) writeJson(AI_PROVIDERS_FILE, [])
   ensureDir(WRITING_STYLES_DIR)
   if (!existsSync(WRITING_STYLES_FILE)) writeJson(WRITING_STYLES_FILE, [])
+  ensureDir(SKILLS_DIR)
+  if (!existsSync(SKILLS_FILE)) writeJson(SKILLS_FILE, [])
 }

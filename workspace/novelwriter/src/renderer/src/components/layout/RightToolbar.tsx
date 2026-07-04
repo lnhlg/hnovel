@@ -1,8 +1,9 @@
-import { PenTool } from 'lucide-react'
+import { PenTool, BookOpen } from 'lucide-react'
 import { useLayoutStore } from '../../store/layout'
 
 const tools = [
   { id: 'writingStyles' as const, icon: PenTool, label: '写作风格' },
+  { id: 'skills' as const, icon: BookOpen, label: '写作技能' },
 ]
 
 export default function RightToolbar(): JSX.Element {

@@ -3,7 +3,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle,
+  Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
   loadProjects, saveProject, deleteProject, loadProjectById,
   loadStoryProgress, saveStoryProgress,
   loadChapters, saveChapter, deleteChapter,
@@ -15,7 +15,8 @@ import {
   loadInspirations, saveInspiration, deleteInspiration,
   loadWritingLogs, saveWritingLog, deleteWritingLog,
   loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder
+  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
+  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder
 } from './fileStorage'
 import {
   getActiveProvider,
@@ -2204,6 +2205,48 @@ export function registerWritingStyleHandlers(): void {
 
   ipcMain.handle('writingStyle:delete', (_event, id: string) => {
     deleteWritingStyle(id)
+    return { success: true }
+  })
+}
+
+// ===== 技能 =====
+
+export function registerSkillHandlers(): void {
+  ipcMain.handle('skill:list', () => {
+    return loadSkills().sort((a, b) => a.sortOrder - b.sortOrder)
+  })
+
+  ipcMain.handle('skill:save', (_event, data: Partial<Skill>) => {
+    const time = now()
+    if (data.id) {
+      const existing = loadSkills().find(s => s.id === data.id)
+      if (!existing) return undefined
+      const skill: Skill = {
+        ...existing,
+        name: data.name ?? existing.name,
+        description: data.description ?? existing.description,
+        category: data.category ?? existing.category,
+        content: data.content ?? existing.content,
+        sortOrder: data.sortOrder ?? existing.sortOrder,
+        updatedAt: time
+      }
+      saveSkill(skill)
+      return skill
+    } else {
+      const id = randomUUID()
+      const sortOrder = getNextSkillSortOrder()
+      const skill: Skill = {
+        id, name: data.name ?? '', description: data.description ?? '',
+        category: data.category ?? '', content: data.content ?? '',
+        sortOrder, createdAt: time, updatedAt: time
+      }
+      saveSkill(skill)
+      return skill
+    }
+  })
+
+  ipcMain.handle('skill:delete', (_event, id: string) => {
+    deleteSkill(id)
     return { success: true }
   })
 }

@@ -147,6 +147,17 @@ export interface WritingStyle {
   updatedAt: string
 }
 
+export interface Skill {
+  id: string
+  name: string
+  description: string
+  category: string
+  content: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
 interface AppState {
   // 项目
   projects: Project[]
@@ -246,6 +257,11 @@ interface AppState {
   loadWritingStyles: () => Promise<void>
   saveWritingStyle: (data: Partial<WritingStyle>) => Promise<void>
   deleteWritingStyle: (id: string) => Promise<void>
+  // 技能操作（全局）
+  skills: Skill[]
+  loadSkills: () => Promise<void>
+  saveSkill: (data: Partial<Skill>) => Promise<void>
+  deleteSkill: (id: string) => Promise<void>
   // 故事进展摘要
   storyProgress: string
   loadStoryProgress: (projectId: string) => Promise<void>
@@ -269,6 +285,7 @@ export const useAppStore = create<AppState>()(
   writingLogs: [],
   references: [],
   writingStyles: [],
+  skills: [],
   editorContent: '',
   editorMode: 'richtext',
   chatModel: '',
@@ -592,6 +609,24 @@ export const useAppStore = create<AppState>()(
     await window.api.deleteWritingStyle(id)
     const { writingStyles } = get()
     set({ writingStyles: writingStyles.filter((s) => s.id !== id) })
+  },
+
+  // 技能操作
+  loadSkills: async () => {
+    const skills = await window.api.getSkills()
+    set({ skills })
+  },
+
+  saveSkill: async (data) => {
+    const saved = await window.api.saveSkill(data)
+    const { skills } = get()
+    set({ skills: [...skills.filter(s => s.id !== saved.id), saved] })
+  },
+
+  deleteSkill: async (id) => {
+    await window.api.deleteSkill(id)
+    const { skills } = get()
+    set({ skills: skills.filter((s) => s.id !== id) })
   },
 
   loadStoryProgress: async (projectId) => {

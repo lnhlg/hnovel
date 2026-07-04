@@ -16,6 +16,7 @@ import InspirationsPanel from './components/InspirationsPanel'
 import WritingLogsPanel from './components/WritingLogsPanel'
 import ReferencesPanel from './components/ReferencesPanel'
 import WritingStylesPanel from './components/WritingStylesPanel'
+import SkillsPanel from './components/SkillsPanel'
 import RightToolbar from './components/layout/RightToolbar'
 import TitleBar from './components/layout/TitleBar'
 import StatusBar from './components/layout/StatusBar'
@@ -257,6 +258,8 @@ function App(): JSX.Element {
               <ReferencesPanel />
             ) : sidebarView === 'writingStyles' ? (
               <WritingStylesPanel />
+            ) : sidebarView === 'skills' ? (
+              <SkillsPanel />
             ) : (
               <OutlinePanel />
             )}

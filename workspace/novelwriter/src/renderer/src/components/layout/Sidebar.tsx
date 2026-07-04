@@ -40,6 +40,7 @@ export default function Sidebar(): JSX.Element {
     loadWritingLogs,
     loadReferences,
     loadWritingStyles,
+    loadSkills,
     createChapter,
     deleteProject,
     deleteChapter
@@ -83,6 +84,7 @@ export default function Sidebar(): JSX.Element {
   React.useEffect(() => {
     loadProjects()
     loadWritingStyles()
+    loadSkills()
   }, [])
 
   const handleSelectProject = async (project: typeof currentProject): Promise<void> => {
