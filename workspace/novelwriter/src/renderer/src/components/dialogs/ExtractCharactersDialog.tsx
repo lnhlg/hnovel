@@ -38,7 +38,7 @@ export default function ExtractCharactersDialog({ open, onClose, sourceText, pro
           },
           {
             role: 'user' as const,
-            content: sourceText.slice(0, 8000)
+            content: sourceText.slice(0, 15000)
           }
         ]
 
@@ -46,11 +46,18 @@ export default function ExtractCharactersDialog({ open, onClose, sourceText, pro
 
         // 尝试解析 JSON
         let parsed: { name: string; description?: string; appearance?: string; personality?: string }[] = []
-        const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/)
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[1].trim())
-        } else {
-          parsed = JSON.parse(result.trim())
+        // 清理可能的额外文字
+        let cleanResult = result.trim()
+        // 如果包含 ``` 块，抽取第一个
+        const fenceMatch = cleanResult.match(/```(?:json)?\s*([\s\S]*?)```/)
+        if (fenceMatch) cleanResult = fenceMatch[1].trim()
+        try {
+          parsed = JSON.parse(cleanResult)
+        } catch {
+          // 尝试查找 JSON 数组
+          const arrMatch = cleanResult.match(/\[\s*\{[\s\S]*?\}\s*\]/)
+          if (arrMatch) parsed = JSON.parse(arrMatch[0])
+          else throw new Error('无法解析 AI 返回的 JSON')
         }
 
         if (Array.isArray(parsed)) {

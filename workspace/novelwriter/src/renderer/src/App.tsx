@@ -18,7 +18,6 @@ import ReferencesPanel from './components/ReferencesPanel'
 import WritingStylesPanel from './components/WritingStylesPanel'
 import SkillsPanel from './components/SkillsPanel'
 import RightToolbar from './components/layout/RightToolbar'
-import TitleBar from './components/layout/TitleBar'
 import StatusBar from './components/layout/StatusBar'
 import Sidebar from './components/layout/Sidebar'
 import DocTabs from './components/DocTabs'
@@ -182,15 +181,12 @@ function App(): JSX.Element {
 
   return (
     <div className="flex flex-col w-full h-full overflow-hidden">
-      {/* 标题栏 */}
-      <TitleBar />
-
       {/* 主体区域 */}
       <div className="flex flex-1 overflow-hidden">
         {/* 可拖拽面板 — 3 列布局 */}
         <PanelGroup orientation="horizontal" className="flex-1">
           {/* 左侧：项目树 */}
-          <Panel id="sidebar" defaultSize="22%" minSize="16%" maxSize="40%">
+          <Panel id="sidebar" defaultSize="16%" minSize="12%" maxSize="35%">
             <Sidebar />
           </Panel>
           <PanelResizeHandle />
@@ -217,9 +213,29 @@ function App(): JSX.Element {
                       />
                     </div>
                   ) : activeDoc.type === 'chapter' ? (
-                    <div className="mx-auto max-w-4xl h-full">
+                    <div className="h-full">
                       <ChapterDocEditor key={activeDoc.id} doc={activeDoc} />
                     </div>
+                  ) : activeDoc.type === 'characters' ? (
+                    <CharactersPanel />
+                  ) : activeDoc.type === 'worldSettings' ? (
+                    <WorldSettingsPanel />
+                  ) : activeDoc.type === 'timeline' ? (
+                    <TimelinePanel />
+                  ) : activeDoc.type === 'locations' ? (
+                    <LocationsPanel />
+                  ) : activeDoc.type === 'inspirations' ? (
+                    <InspirationsPanel />
+                  ) : activeDoc.type === 'writingLogs' ? (
+                    <WritingLogsPanel />
+                  ) : activeDoc.type === 'references' ? (
+                    <ReferencesPanel />
+                  ) : activeDoc.type === 'writingStyles' ? (
+                    <WritingStylesPanel />
+                  ) : activeDoc.type === 'skills' ? (
+                    <SkillsPanel />
+                  ) : activeDoc.type === 'project' ? (
+                    <OutlinePanel />
                   ) : (
                     <div className="mx-auto max-w-4xl h-full">
                       <MarkdownDocEditor key={activeDoc.id} doc={activeDoc} />
@@ -237,33 +253,14 @@ function App(): JSX.Element {
             </div>
           </Panel>
 
-          {/* 右侧：根据左侧选择显示对应面板 */}
-          <PanelResizeHandle />
-          <Panel id="right" defaultSize="26%" minSize="16%" maxSize="45%">
-            {sidebarView === 'characters' ? (
-              <CharactersPanel />
-            ) : sidebarView === 'world' ? (
-              <WorldSettingsPanel />
-            ) : sidebarView === 'timeline' ? (
-              <TimelinePanel />
-            ) : sidebarView === 'locations' ? (
-              <LocationsPanel />
-            ) : sidebarView === 'relations' ? (
-              <CharacterRelationsPanel />
-            ) : sidebarView === 'inspirations' ? (
-              <InspirationsPanel />
-            ) : sidebarView === 'logs' ? (
-              <WritingLogsPanel />
-            ) : sidebarView === 'references' ? (
-              <ReferencesPanel />
-            ) : sidebarView === 'writingStyles' ? (
-              <WritingStylesPanel />
-            ) : sidebarView === 'skills' ? (
-              <SkillsPanel />
-            ) : (
-              <OutlinePanel />
-            )}
-          </Panel>
+          {sidebarView === 'relations' && (
+            <>
+              <PanelResizeHandle />
+              <Panel id="right" defaultSize="26%" minSize="16%" maxSize="45%">
+                <CharacterRelationsPanel />
+              </Panel>
+            </>
+          )}
         </PanelGroup>
 
         {/* 右侧工具栏 */}

@@ -74,6 +74,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const chatReasoningEffort = useAppStore((s) => s.chatReasoningEffort)
   const setChatModel = useAppStore((s) => s.setChatModel)
   const setChatReasoningEffort = useAppStore((s) => s.setChatReasoningEffort)
+  const skills = useAppStore((s) => s.skills)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [loading, setLoading] = useState(false)
@@ -98,6 +99,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [showPolishEffortDropdown, setShowPolishEffortDropdown] = useState(false)
   const [polishHistory, setPolishHistory] = useState<string[]>([])
   const [showPolishHistory, setShowPolishHistory] = useState(false)
+  const [deAiMode, setDeAiMode] = useState(false)
 
   // 加载润色指令历史
   useEffect(() => {
@@ -351,6 +353,37 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }
   }
 
+  const handleDeAi = (): void => {
+    if (!currentProject) return
+    const skillId = currentProject.skillId
+    if (!skillId) {
+      alert('请先在项目设置中配置「去AI味」技能')
+      return
+    }
+    const skill = skills.find(s => s.id === skillId)
+    if (!skill) {
+      alert('所选「去AI味」技能不存在，请重新设置')
+      return
+    }
+    // 如果 extractText 为空，从当前 textarea 取值
+    if (!extractText.trim()) {
+      const ta = textareaRef.current
+      if (ta) {
+        const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd)
+        setExtractText(sel || ta.value)
+      }
+    }
+    setPolishInstruction(skill.content)
+    setPolishModel(chatModel || '')
+    setPolishEffort(chatReasoningEffort)
+    window.api.listModels?.().then((list: { id: string; name: string }[]) => {
+      if (list?.[0]) setPolishModels(list)
+    }).catch(() => {})
+    setShowAiPolish(true)
+    setPolishResult('')
+    setDeAiMode(true)
+  }
+
   const handleAiPolish = async (): Promise<void> => {
     if (!polishInstruction.trim() || !extractText.trim() || polishing) return
     setPolishing(true)
@@ -398,6 +431,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
     setDocContent(doc.id, full)
     setShowAiPolish(false)
+    setDeAiMode(false)
     setPolishResult('')
     setPolishInstruction('')
     // 恢复焦点到 textarea
@@ -650,6 +684,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 <Sparkles size={12} />
                 AI 润色
               </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors"
+                style={{ color: 'var(--color-text)' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                onClick={() => { setContextMenu(null); handleDeAi() }}
+              >
+                <Sparkles size={12} />
+                去AI味
+              </button>
             </>
           )}
           <div className="h-px my-1 mx-2" style={{ backgroundColor: 'var(--color-border-light)' }} />
@@ -717,9 +761,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
       {/* AI 润色对话框 */}
       {showAiPolish && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-[800px] max-h-[90vh] rounded-xl bg-white p-6 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--color-surface)' }}>
-            <h2 className="mb-1 text-lg font-semibold" style={{ color: 'var(--color-text)' }}>AI 润色</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setShowAiPolish(false); setDeAiMode(false) }}>
+          <div className="w-full max-w-4xl max-h-[95vh] mx-8 rounded-xl bg-white p-6 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--color-surface)' }} onClick={e => e.stopPropagation()}>
+            <h2 className="mb-1 text-lg font-semibold" style={{ color: 'var(--color-text)' }}>{deAiMode ? '去AI味' : 'AI 润色'}</h2>
             <p className="mb-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
               选中 {extractText.length} 个字符
             </p>
@@ -773,10 +817,11 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
             <div className="mb-2">
               <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>原文</label>
               <div className="max-h-56 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }}>
-                {extractText.slice(0, 1000)}{extractText.length > 1000 ? '...' : ''}
+                {extractText}
               </div>
             </div>
 
+            {!deAiMode && (
             <div className="mb-3 relative">
               <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>润色指令</label>
               <textarea value={polishInstruction} onChange={e => setPolishInstruction(e.target.value)}
@@ -802,6 +847,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 </div>
               )}
             </div>
+            )}
 
             {polishResult && (
               <div className="mb-3 flex-1">
@@ -820,7 +866,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
             )}
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setShowAiPolish(false); setPolishResult(''); setPolishInstruction(''); setTimeout(() => textareaRef.current?.focus(), 0) }}
+              <button onClick={() => { setShowAiPolish(false); setDeAiMode(false); setPolishResult(''); setPolishInstruction(''); setTimeout(() => textareaRef.current?.focus(), 0) }}
                 className="rounded border px-4 py-1.5 text-xs" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)' }}>
                 取消
               </button>

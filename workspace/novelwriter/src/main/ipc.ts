@@ -121,6 +121,7 @@ export function registerProjectHandlers(): void {
       wordCountTarget: 0, status: '构思中', worldBackground: '',
       storyProgress: '',
       writingStyleId: '',
+      skillId: '',
       createdAt: time, updatedAt: time
     }
     saveProject(project)
@@ -143,6 +144,7 @@ export function registerProjectHandlers(): void {
       wordCountTarget: 0, status: '构思中', worldBackground: '',
       storyProgress: '',
       writingStyleId: '',
+      skillId: '',
       createdAt: time, updatedAt: time
     }
     saveProject(project)
@@ -155,6 +157,30 @@ export function registerProjectHandlers(): void {
 
   ipcMain.handle('project:list', () => {
     return loadProjects().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  })
+
+  ipcMain.handle('project:openFromFolder', async (_event, folderPath: string) => {
+    // 验证是否是合法项目文件夹
+    const novelwriterDir = join(folderPath, '.novelwriter')
+    const chaptersDir = join(folderPath, '章节')
+    if (!existsSync(novelwriterDir) || !existsSync(chaptersDir)) {
+      throw new Error('非合法项目文件夹：缺少必要的项目文件结构')
+    }
+    // 检查是否已存在同名项目
+    const name = folderPath.split(/[/\\]/).pop() || ''
+    const existing = loadProjects().find(p => p.path === folderPath)
+    if (existing) return existing
+    // 创建新项目
+    const id = randomUUID()
+    const time = now()
+    const project: Project = {
+      id, name, description: '', synopsis: '', path: folderPath, genre: '',
+      wordCountTarget: 0, status: '构思中', worldBackground: '',
+      storyProgress: '', writingStyleId: '', skillId: '',
+      createdAt: time, updatedAt: time
+    }
+    saveProject(project)
+    return project
   })
 
   ipcMain.handle('project:save', (_event, data: Partial<Project> & { id: string }) => {
@@ -172,6 +198,7 @@ export function registerProjectHandlers(): void {
       status: data.status ?? existing.status,
       worldBackground: data.worldBackground ?? existing.worldBackground,
       writingStyleId: data.writingStyleId ?? existing.writingStyleId,
+      skillId: data.skillId ?? existing.skillId,
       updatedAt: time
     }
     saveProject(project)
@@ -565,6 +592,17 @@ export function registerAIOutineHandlers(): void {
           prompt += `- ${style.name}：${style.instructions}\n`
         }
         prompt += '\n请严格遵循上述写作风格进行创作。\n\n'
+      }
+    }
+
+    // 注入「去AI味」技能（使用项目选中的）
+    const skillId = loadProjectById(opts.projectId)?.skillId
+    if (skillId) {
+      const selectedSkill = loadSkills().find(s => s.id === skillId)
+      if (selectedSkill) {
+        prompt += '【写作技能指令（去AI味）】\n'
+        prompt += `- ${selectedSkill.name}：${selectedSkill.content}\n`
+        prompt += '\n请严格遵循上述写作技能进行创作。\n\n'
       }
     }
 

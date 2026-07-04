@@ -4,6 +4,7 @@ const api = {
   // 项目管理
   createProject: (name: string) => ipcRenderer.invoke('project:create', name),
   openProject: (path: string) => ipcRenderer.invoke('project:open', path),
+  openProjectFromFolder: (folderPath: string) => ipcRenderer.invoke('project:openFromFolder', folderPath),
   listProjects: () => ipcRenderer.invoke('project:list'),
   saveProject: (data: unknown) => ipcRenderer.invoke('project:save', data),
   deleteProject: (id: string) => ipcRenderer.invoke('project:delete', id),

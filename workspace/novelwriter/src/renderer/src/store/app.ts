@@ -13,6 +13,7 @@ export interface Project {
   worldBackground: string
   storyProgress: string
   writingStyleId: string
+  skillId: string
   createdAt: string
   updatedAt: string
 }

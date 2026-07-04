@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initStorage } from './fileStorage'
@@ -19,6 +19,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
   })
 
@@ -38,6 +39,8 @@ app.whenReady().then(async () => {
 
   // 初始化文件存储
   await initStorage()
+  // 去除默认菜单栏
+  Menu.setApplicationMenu(null)
   // 加载活跃的 AI 供应商配置
   loadActiveProvider()
   // 注册 IPC 处理器

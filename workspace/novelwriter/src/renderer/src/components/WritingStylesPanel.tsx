@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react'
-import { Sparkles, Loader2 } from 'lucide-react'
+import { Sparkles, Loader2, Plus, X } from 'lucide-react'
 import { useAppStore } from '../store/app'
 
 function WritingStylesPanel(): JSX.Element {
   const { writingStyles, loadWritingStyles, saveWritingStyle, deleteWritingStyle } = useAppStore()
+  const [showDialog, setShowDialog] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', description: '', instructions: '' })
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
-  useEffect(() => {
-    loadWritingStyles()
-  }, [])
+  useEffect(() => { loadWritingStyles() }, [])
 
   const sorted = [...writingStyles].sort((a, b) => a.sortOrder - b.sortOrder)
 
@@ -26,7 +25,6 @@ function WritingStylesPanel(): JSX.Element {
       const result = await window.api.aiChat(messages, { stream: false })
       if (result) {
         const parsed = JSON.parse(result.trim())
-        // 修复 AI 输出中可能出现的标点粘连
         const fixPunct = (s: unknown) => typeof s === 'string' ? s.replace(/([。；！？])\s*，/g, '$1') : String(s ?? '')
         setForm({
           name: fixPunct(parsed.name || ''),
@@ -36,119 +34,123 @@ function WritingStylesPanel(): JSX.Element {
         setAiPrompt('')
       }
     } catch (err) {
-      console.error('AI 生成失败:', err)
       alert('AI 生成失败：' + (err instanceof Error ? err.message : String(err)))
-    } finally {
-      setAiLoading(false)
-    }
+    } finally { setAiLoading(false) }
   }
 
-  const handleSave = async (id?: string): Promise<void> => {
+  const handleSave = async (): Promise<void> => {
     if (!form.name.trim()) return
-    if (id) {
-      await saveWritingStyle({ id, name: form.name, description: form.description, instructions: form.instructions })
+    if (editingId) {
+      await saveWritingStyle({ id: editingId, ...form })
     } else {
-      await saveWritingStyle({ name: form.name, description: form.description, instructions: form.instructions })
+      await saveWritingStyle(form)
     }
+    setShowDialog(false)
     setEditingId(null)
     setForm({ name: '', description: '', instructions: '' })
   }
 
-  const handleEdit = (style: typeof writingStyles[0]): void => {
-    setEditingId(style.id)
+  const openAdd = (): void => {
+    setForm({ name: '', description: '', instructions: '' })
+    setEditingId(null)
+    setAiPrompt('')
+    setShowDialog(true)
+  }
+
+  const openEdit = (style: typeof writingStyles[0]): void => {
     setForm({ name: style.name, description: style.description, instructions: style.instructions })
+    setEditingId(style.id)
+    setAiPrompt('')
+    setShowDialog(true)
   }
 
   const handleDelete = async (id: string): Promise<void> => {
     if (!confirm('确定要删除这个写作风格吗？')) return
     await deleteWritingStyle(id)
-    if (editingId === id) { setEditingId(null); setForm({ name: '', description: '', instructions: '' }) }
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--color-sidebar)', borderLeft: '1px solid var(--color-border)' }}>
-      <div className="px-3 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--color-border)' }}>
-        <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
-          写作风格 ({writingStyles.length})
-        </span>
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--color-surface)' }}>
+      <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>写作风格 ({writingStyles.length})</span>
+        <button onClick={openAdd} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs"
+          style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}>
+          <Plus size={14} /> 添加
+        </button>
       </div>
-      <div className="flex-1 overflow-auto p-3 space-y-3">
-        {sorted.map(style => (
-          <div key={style.id} className="group rounded-lg p-2.5" style={{ border: '1px solid var(--color-border-light)' }}>
-            {editingId === style.id ? (
-              <div className="space-y-2">
-                <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="w-full rounded border px-2 py-1 text-xs outline-none"
-                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                  placeholder="风格名称" />
-                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                  className="w-full rounded border px-2 py-1 text-xs resize-none outline-none" rows={2}
-                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                  placeholder="风格描述（可选）" />
-                <textarea value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })}
-                  className="w-full rounded border px-2 py-1 text-xs resize-none outline-none font-mono" rows={4}
-                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                  placeholder="写作指令：告诉AI如何写作，如语气、句式、描写偏好等" />
-                <div className="flex gap-1">
-                  <button onClick={() => handleSave(style.id)} className="rounded bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600">保存</button>
-                  <button onClick={() => { setEditingId(null); setForm({ name: '', description: '', instructions: '' })}} className="rounded border px-3 py-1 text-xs"
-                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'transparent' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>取消</button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{style.name}</span>
-                  <div className="hidden group-hover:flex gap-2">
-                    <button onClick={() => handleEdit(style)} className="text-xs" style={{ color: 'var(--color-text-muted)' }}>编辑</button>
-                    <button onClick={() => handleDelete(style.id)} className="text-xs" style={{ color: 'var(--color-danger)' }}>删除</button>
-                  </div>
-                </div>
-                {style.description && <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{style.description}</p>}
-                {style.instructions && <pre className="mt-1 text-xs whitespace-pre-wrap" style={{ color: 'var(--color-text-dim)' }}>{style.instructions}</pre>}
-              </div>
-            )}
+
+      <div className="flex-1 overflow-auto p-4">
+        {sorted.length === 0 && (
+          <div className="flex items-center justify-center h-full text-xs" style={{ color: 'var(--color-text-dim)' }}>
+            暂无写作风格，点击右上角「添加」创建
           </div>
-        ))}
-        {/* 添加新风格 */}
-        {editingId === null && (
-          <div className="rounded-lg p-3" style={{ border: '1px dashed var(--color-border)' }}>
-            <h4 className="text-xs font-medium mb-2" style={{ color: 'var(--color-text-muted)' }}>添加写作风格</h4>
-            <div className="space-y-1.5">
-              <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded border px-2 py-1 text-xs outline-none"
-                style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                placeholder="风格名称（如：古风典雅、现代直白）" />
-              <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                className="w-full rounded border px-2 py-1 text-xs resize-none outline-none" rows={2}
-                style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                placeholder="风格描述" />
-              <textarea value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })}
-                className="w-full rounded border px-2 py-1 text-xs resize-none outline-none font-mono" rows={4}
-                style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                placeholder="写作指令示例：&#10;1. 使用简洁明快的短句，避免冗长修饰&#10;2. 对话要符合人物身份，市井人物用口语&#10;3. 动作描写要有画面感，多用比喻" />
+        )}
+        <div className="grid grid-cols-4 gap-3">
+          {sorted.map(style => (
+            <div key={style.id} className="group rounded-lg p-3" style={{ border: '1px solid var(--color-border)' }}>
+              <div className="flex items-start justify-between">
+                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{style.name}</span>
+                <div className="hidden group-hover:flex gap-1">
+                  <button onClick={() => openEdit(style)} className="text-xs px-1.5 py-0.5 rounded" style={{ color: 'var(--color-accent)' }}>编辑</button>
+                  <button onClick={() => handleDelete(style.id)} className="text-xs px-1.5 py-0.5 rounded" style={{ color: 'var(--color-danger)' }}>删除</button>
+                </div>
+              </div>
+              {style.description && <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{style.description}</p>}
+              {style.instructions && <pre className="mt-1 text-xs whitespace-pre-wrap line-clamp-4" style={{ color: 'var(--color-text-dim)' }}>{style.instructions}</pre>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 添加/编辑对话框 */}
+      {showDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowDialog(false)}>
+          <div className="w-[520px] rounded-xl p-6 shadow-2xl" style={{ backgroundColor: 'var(--color-surface)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>{editingId ? '编辑写作风格' : '添加写作风格'}</h2>
+              <button onClick={() => setShowDialog(false)} className="icon-btn"><X size={16} /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>风格名称</label>
+                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                  className="w-full rounded border px-3 py-2 text-xs outline-none"
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }}
+                  placeholder="如：古风典雅、现代直白" />
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>描述</label>
+                <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+                  className="w-full rounded border px-3 py-2 text-xs resize-none outline-none" rows={2}
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }} />
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--color-text-muted)' }}>写作指令</label>
+                <textarea value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })}
+                  className="w-full rounded border px-3 py-2 text-xs resize-none outline-none font-mono" rows={5}
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }} />
+              </div>
               <div className="flex gap-1 items-center">
-                <input type="text" value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
-                  className="flex-1 rounded border px-2 py-1 text-xs outline-none"
-                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
-                  placeholder="描述你想要的写作风格..."
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiGenerate() } }} />
+                <input value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
+                  className="flex-1 rounded border px-3 py-2 text-xs outline-none"
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }}
+                  placeholder="描述你想要的写作风格..." />
                 <button onClick={handleAiGenerate} disabled={aiLoading || !aiPrompt.trim()}
-                  className="rounded px-2 py-1 text-xs flex items-center gap-1"
-                  style={{ color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}
-                  title="AI 生成">
+                  className="rounded px-3 py-2 text-xs flex items-center gap-1"
+                  style={{ color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}>
                   {aiLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                   AI
                 </button>
               </div>
-              <button onClick={() => handleSave()} disabled={!form.name.trim()}
-                className="w-full rounded bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600 disabled:opacity-50">添加</button>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowDialog(false)} className="rounded border px-4 py-2 text-xs" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)' }}>取消</button>
+                <button onClick={handleSave} disabled={!form.name.trim()}
+                  className="rounded px-4 py-2 text-xs" style={{ backgroundColor: 'var(--color-accent)', color: '#fff', opacity: !form.name.trim() ? 0.5 : 1 }}>保存</button>
+              </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

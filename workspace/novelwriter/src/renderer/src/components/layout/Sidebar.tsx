@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, X, Sparkles, ChevronRight, ChevronDown, ScrollText, Users, Globe, Clock, MapPin, Link2, Lightbulb, FileText, BookOpen } from 'lucide-react'
+import { Plus, Trash2, X, Sparkles, ChevronRight, ChevronDown, ScrollText, Users, Globe, Clock, MapPin, Link2, Lightbulb, FileText, BookOpen, FolderOpen, UserPlus } from 'lucide-react'
 import { useAppStore } from '../../store/app'
 import { useLayoutStore, type SidebarView, type DocType } from '../../store/layout'
 import NewProjectDialog from '../dialogs/NewProjectDialog'
 import AIWizardDialog from '../dialogs/AIWizardDialog'
+import ExtractCharactersDialog from '../dialogs/ExtractCharactersDialog'
 
 interface CategoryItem {
   id: SidebarView
@@ -49,10 +50,14 @@ export default function Sidebar(): JSX.Element {
   const sidebarView = useLayoutStore((s) => s.sidebarView)
   const setSidebarView = useLayoutStore((s) => s.setSidebarView)
   const openDoc = useLayoutStore((s) => s.openDoc)
+  const openDocs = useLayoutStore((s) => s.openDocs)
+  const activeDocId = useLayoutStore((s) => s.activeDocId)
 
   const [showNewProject, setShowNewProject] = useState(false)
   const [showAIWizard, setShowAIWizard] = useState(false)
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['chapters']))
+  const [showScanChars, setShowScanChars] = useState(false)
+  const [scanText, setScanText] = useState('')
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chapterId: string } | null>(null)
   const [renameChapterId, setRenameChapterId] = useState<string | null>(null)
   const [renameTitle, setRenameTitle] = useState('')
@@ -99,7 +104,6 @@ export default function Sidebar(): JSX.Element {
     await loadInspirations(project.id)
     await loadWritingLogs(project.id)
     await loadReferences(project.id)
-    setSidebarView('outline')
     openDocTab('project', project.id, project.name || '项目信息')
   }
 
@@ -244,6 +248,24 @@ export default function Sidebar(): JSX.Element {
           <span>新建项目</span>
         </button>
         <button
+          onClick={async () => {
+            const result = await window.api.selectFolder()
+            if (!result || result.canceled || !result.filePaths?.[0]) return
+            try {
+              const project = await window.api.openProjectFromFolder(result.filePaths[0])
+              await loadProjects()
+              await handleSelectProject(project)
+            } catch (err) {
+              alert('打开项目失败：' + (err instanceof Error ? err.message : String(err)))
+            }
+          }}
+          className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-[var(--color-hover)]"
+          style={{ color: 'var(--color-text-secondary)' }}
+        >
+          <FolderOpen size={14} />
+          <span>打开项目</span>
+        </button>
+        <button
           onClick={() => setShowAIWizard(true)}
           className="flex items-center gap-1.5 w-full rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-[var(--color-hover)]"
           style={{ color: 'var(--color-accent)' }}
@@ -358,6 +380,23 @@ export default function Sidebar(): JSX.Element {
                             <Plus size={12} />
                             <span>新建章节</span>
                           </button>
+                          <button
+                            onClick={async () => {
+                              if (!currentProject) return
+                              // 收集所有章节正文
+                              const allText = chapters.map(c => c.content).filter(Boolean).join('\n\n').slice(0, 30000)
+                              if (!allText.trim()) { alert('章节内容为空，无法扫描'); return }
+                              setScanText(allText)
+                              setShowScanChars(true)
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-xs w-full rounded-sm transition-colors"
+                            style={{ color: 'var(--color-text-muted)' }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <UserPlus size={12} />
+                            <span>扫描角色</span>
+                          </button>
                         </div>
                       )}
                     </div>
@@ -365,30 +404,32 @@ export default function Sidebar(): JSX.Element {
                     {/* 其他分类节点——可展开子项 */}
                     {(() => {
                       const expandableCats: Array<{
-                        id: string; label: string; icon: React.ElementType; items: Array<{id: string; title: string; subtitle?: string}>; docType: DocType
+                        id: string; label: string; icon: React.ElementType; items: Array<{id: string; title: string; subtitle?: string}>; docType: DocType; panelType: DocType; panelId: string
                       }> = [
-                        { id: 'characters', label: '角色', icon: Users, docType: 'character', items: characters.map(c => ({ id: c.id, title: c.name, subtitle: c.role })) },
-                        { id: 'world', label: '世界观', icon: Globe, docType: 'worldSetting', items: worldSettings.map(w => ({ id: w.id, title: w.key, subtitle: w.category })) },
-                        { id: 'timeline', label: '时间线', icon: Clock, docType: 'timeline', items: timelines.map(t => ({ id: t.id, title: t.title })) },
-                        { id: 'locations', label: '地点场景', icon: MapPin, docType: 'location', items: locations.map(l => ({ id: l.id, title: l.name, subtitle: l.type })) },
-                        { id: 'relations', label: '角色关系', icon: Link2, docType: 'characterRelations', items: characterRelations.map(r => ({ id: r.id, title: `${r.characterId1} ↔ ${r.characterId2}` })) },
-                        { id: 'inspirations', label: '灵感记录', icon: Lightbulb, docType: 'inspirations', items: inspirations.map(i => ({ id: i.id, title: i.title })) },
-                        { id: 'references', label: '参考资料', icon: BookOpen, docType: 'references', items: references.map(r => ({ id: r.id, title: r.title })) },
-                        { id: 'logs', label: '写作日志', icon: FileText, docType: 'writingLogs', items: writingLogs.map(l => ({ id: l.id, title: '日志 #' + l.createdAt?.slice(0,10) })) },
+                        { id: 'characters', label: '角色', icon: Users, docType: 'character', panelType: 'characters', panelId: 'characters', items: characters.map(c => ({ id: c.id, title: c.name, subtitle: c.role })) },
+                        { id: 'world', label: '世界观', icon: Globe, docType: 'worldSetting', panelType: 'worldSettings', panelId: 'world', items: worldSettings.map(w => ({ id: w.id, title: w.key, subtitle: w.category })) },
+                        { id: 'timeline', label: '时间线', icon: Clock, docType: 'timeline', panelType: 'timeline', panelId: 'timeline', items: timelines.map(t => ({ id: t.id, title: t.title })) },
+                        { id: 'locations', label: '地点场景', icon: MapPin, docType: 'location', panelType: 'locations', panelId: 'locations', items: locations.map(l => ({ id: l.id, title: l.name, subtitle: l.type })) },
+                        { id: 'inspirations', label: '灵感记录', icon: Lightbulb, docType: 'inspirations', panelType: 'inspirations', panelId: 'inspirations', items: inspirations.map(i => ({ id: i.id, title: i.title })) },
+                        { id: 'references', label: '参考资料', icon: BookOpen, docType: 'references', panelType: 'references', panelId: 'references', items: references.map(r => ({ id: r.id, title: r.title })) },
+                        { id: 'logs', label: '写作日志', icon: FileText, docType: 'writingLogs', panelType: 'writingLogs', panelId: 'writingLogs', items: writingLogs.map(l => ({ id: l.id, title: '日志 #' + l.createdAt?.slice(0,10) })) },
                       ]
                       return expandableCats.map(cat => (
                         <div key={cat.id}>
-                          <div
-                            onClick={() => toggleSection(cat.id)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs cursor-pointer rounded-sm transition-colors"
+                          <div className="flex items-center gap-1 px-2 py-1 text-xs rounded-sm transition-colors"
                             style={{ color: 'var(--color-text-secondary)' }}
                             onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
                             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
-                            {expandedSections.has(cat.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                            <cat.icon size={12} />
-                            <span className="flex-1">{cat.label}</span>
-                            <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>{cat.items.length}</span>
+                            <span onClick={() => toggleSection(cat.id)} className="cursor-pointer flex items-center">
+                              {expandedSections.has(cat.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                            <span onClick={() => { setSidebarView('project'); openDocTab(cat.panelType, cat.panelId, cat.label) }}
+                              className="flex items-center gap-1 flex-1 cursor-pointer">
+                              <cat.icon size={12} />
+                              <span className="flex-1">{cat.label}</span>
+                              <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>{cat.items.length}</span>
+                            </span>
                           </div>
                           {expandedSections.has(cat.id) && (
                             <div className="ml-5 border-l-2" style={{ borderColor: 'var(--color-border-light)' }}>
@@ -412,6 +453,22 @@ export default function Sidebar(): JSX.Element {
                         </div>
                       ))
                     })()}
+
+                    {/* 角色关系（共用一张图，不展开） */}
+                    <div
+                      onClick={() => { setSidebarView('relations'); openDocTab('characterRelations', 'relations', '角色关系') }}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs cursor-pointer rounded-sm transition-colors"
+                      style={{
+                        color: sidebarView === 'relations' ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                        backgroundColor: sidebarView === 'relations' ? 'var(--color-active)' : 'transparent',
+                      }}
+                      onMouseEnter={e => { if (sidebarView !== 'relations') e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
+                      onMouseLeave={e => { if (sidebarView !== 'relations') e.currentTarget.style.backgroundColor = 'transparent' }}
+                    >
+                      <Link2 size={12} />
+                      <span className="flex-1">角色关系</span>
+                      <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>{characterRelations.length}</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -460,6 +517,16 @@ export default function Sidebar(): JSX.Element {
         onClose={() => setShowNewProject(false)}
         onConfirm={handleCreateProject}
       />
+
+      {/* 扫描角色对话框 */}
+      {currentProject && (
+        <ExtractCharactersDialog
+          open={showScanChars}
+          onClose={() => setShowScanChars(false)}
+          sourceText={scanText}
+          projectId={currentProject.id}
+        />
+      )}
 
       {/* AI 智能创建对话框 */}
       <AIWizardDialog

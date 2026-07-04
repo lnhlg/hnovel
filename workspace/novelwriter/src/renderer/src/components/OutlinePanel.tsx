@@ -16,11 +16,19 @@ function OutlinePanel(): JSX.Element {
     saveStoryProgress,
     autoUpdateStoryProgress,
     writingStyles,
-    loadWritingStyles
+    loadWritingStyles,
+    skills,
+    loadSkills
   } = useAppStore()
 
   const [synopsis, setSynopsis] = useState(currentProject?.synopsis ?? '')
   const [synopsisSaved, setSynopsisSaved] = useState(true)
+  const [projectName, setProjectName] = useState(currentProject?.name ?? '')
+  const [projectGenre, setProjectGenre] = useState(currentProject?.genre ?? '')
+  const [projectStatus, setProjectStatus] = useState(currentProject?.status ?? '')
+  const [projectSynopsis, setProjectSynopsis] = useState(currentProject?.synopsis ?? '')
+  const [projectWorldBg, setProjectWorldBg] = useState(currentProject?.worldBackground ?? '')
+  const [projectDescription, setProjectDescription] = useState(currentProject?.description ?? '')
   const [editingOutlineId, setEditingOutlineId] = useState<string | null>(null)
   const [outlineDraft, setOutlineDraft] = useState('')
   const [planning, setPlanning] = useState(false)
@@ -34,6 +42,12 @@ function OutlinePanel(): JSX.Element {
   useEffect(() => {
     setSynopsis(currentProject?.synopsis ?? '')
     setSynopsisSaved(true)
+    setProjectName(currentProject?.name ?? '')
+    setProjectGenre(currentProject?.genre ?? '')
+    setProjectStatus(currentProject?.status ?? '')
+    setProjectSynopsis(currentProject?.synopsis ?? '')
+    setProjectWorldBg(currentProject?.worldBackground ?? '')
+    setProjectDescription(currentProject?.description ?? '')
   }, [currentProject?.id])
 
   // Load storyProgress when project changes
@@ -41,6 +55,7 @@ function OutlinePanel(): JSX.Element {
     if (!currentProject?.id) return
     loadStoryProgress(currentProject.id)
     loadWritingStyles()
+    loadSkills()
   }, [currentProject?.id])
 
   // Sync storyProgressDraft when storyProgress loads
@@ -52,6 +67,21 @@ function OutlinePanel(): JSX.Element {
     if (!currentProject) return
     await saveProjectSynopsis(currentProject.id, synopsis)
     setSynopsisSaved(true)
+  }
+
+  const handleSaveProjectField = async (): Promise<void> => {
+    if (!currentProject) return
+    await window.api.saveProject({
+      id: currentProject.id,
+      name: projectName,
+      genre: projectGenre,
+      status: projectStatus,
+      synopsis: projectSynopsis,
+      worldBackground: projectWorldBg,
+      description: projectDescription
+    })
+    const updated = await window.api.openProject(currentProject.id)
+    if (updated) useAppStore.setState({ currentProject: updated })
   }
 
   const handleStartEditOutline = (chapter: typeof currentChapter): void => {
@@ -236,6 +266,76 @@ function OutlinePanel(): JSX.Element {
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* 项目去AI味技能选择 */}
+        {currentProject && skills.filter(s => s.category?.includes('去AI')).length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">
+              去AI味技能
+            </label>
+            <select
+              value={currentProject.skillId || ''}
+              onChange={async (e) => {
+                const val = e.target.value
+                await window.api.saveProject({ id: currentProject.id, skillId: val })
+                const updated = await window.api.openProject(currentProject.id)
+                if (updated) useAppStore.setState({ currentProject: updated })
+              }}
+              className="w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400"
+              style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+              <option value="">（不指定）</option>
+              {skills.filter(s => s.category?.includes('去AI')).map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 项目信息 */}
+        {currentProject && (
+          <div className="space-y-3">
+            <label className="mb-1 block text-xs font-medium text-gray-500">项目信息</label>
+            <div className="rounded-lg border p-3 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>项目名称</label>
+                <input type="text" value={projectName} onChange={e => setProjectName(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400"
+                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>题材 / 状态</label>
+                <div className="flex gap-2">
+                  <input type="text" value={projectGenre} onChange={e => setProjectGenre(e.target.value)} placeholder="题材"
+                    className="flex-1 rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400"
+                    style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }} />
+                  <input type="text" value={projectStatus} onChange={e => setProjectStatus(e.target.value)} placeholder="状态"
+                    className="flex-1 rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400"
+                    style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>简介</label>
+                <textarea value={projectSynopsis} onChange={e => setProjectSynopsis(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400 resize-none" rows={3}
+                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>世界观背景</label>
+                <textarea value={projectWorldBg} onChange={e => setProjectWorldBg(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400 resize-none" rows={3}
+                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>备注</label>
+                <textarea value={projectDescription} onChange={e => setProjectDescription(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-primary-400 resize-none" rows={2}
+                  style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }} />
+              </div>
+            </div>
+            <button onClick={handleSaveProjectField}
+              className="rounded bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600">保存项目信息</button>
           </div>
         )}
 
