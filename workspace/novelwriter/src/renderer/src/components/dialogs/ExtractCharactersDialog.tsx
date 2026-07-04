@@ -54,10 +54,39 @@ export default function ExtractCharactersDialog({ open, onClose, sourceText, pro
         try {
           parsed = JSON.parse(cleanResult)
         } catch {
-          // 尝试查找 JSON 数组
-          const arrMatch = cleanResult.match(/\[\s*\{[\s\S]*?\}\s*\]/)
-          if (arrMatch) parsed = JSON.parse(arrMatch[0])
-          else throw new Error('无法解析 AI 返回的 JSON')
+          // 尝试查找所有 JSON 数组片段
+          let found = false
+          const jsonArrayRegex = /\[\s*\{[\s\S]+?\}\s*\]/g
+          let m
+          while ((m = jsonArrayRegex.exec(cleanResult)) !== null) {
+            try {
+              parsed = JSON.parse(m[0])
+              if (Array.isArray(parsed) && parsed.length > 0) { found = true; break }
+            } catch { }
+          }
+          if (!found) {
+            // 再次请求AI只输出JSON
+            const followUp = await window.api.aiChat([
+              ...messages,
+              { role: 'assistant', content: result },
+              { role: 'user', content: '请只输出 JSON 数组，格式为[{"name":"角色名","description":"描述"}]，不要任何其他文字。' }
+            ], { stream: false })
+            if (followUp) {
+              try {
+                // 尝试从第二次响应解析
+                const clean2 = followUp.trim()
+                const fence2 = clean2.match(/```(?:json)?\s*([\s\S]*?)```/)
+                if (fence2) {
+                  parsed = JSON.parse(fence2[1].trim())
+                } else {
+                  parsed = JSON.parse(clean2)
+                }
+              } catch { }
+            }
+            if (!Array.isArray(parsed) || parsed.length === 0) {
+              throw new Error('无法解析 AI 返回的 JSON')
+            }
+          }
         }
 
         if (Array.isArray(parsed)) {

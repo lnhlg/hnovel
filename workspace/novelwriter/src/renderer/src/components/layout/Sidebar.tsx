@@ -352,7 +352,7 @@ export default function Sidebar(): JSX.Element {
                                     onClick={(e) => e.stopPropagation()}
                                   />
                                 ) : (
-                                  <span className="truncate">{ch.sortOrder + 1}. {ch.title.replace(/^(?:\d+\.[\s-]*|第\s*[一二三四五六七八九十百千\d]+\s*章\s*[·•.、．:\s-]*)+/, '').trim()}</span>
+                                  <span className="truncate">{ch.sortOrder + 1}. {ch.title.replace(/^(?:第\s*[零一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟\d]+\s*[章回节部]\s*[·•.、．：:\s-]*|\d+\.[\s-]*|[Cc]hapter\s+\d+[\s-:]*)+/, '').trim()}</span>
                                 )}
                               </div>
                               <button

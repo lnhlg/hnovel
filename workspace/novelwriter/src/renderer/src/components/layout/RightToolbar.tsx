@@ -1,5 +1,6 @@
-import { PenTool, BookOpen } from 'lucide-react'
+import { PenTool, BookOpen, Settings } from 'lucide-react'
 import { useLayoutStore } from '../../store/layout'
+import { useAISettingsStore } from '../../store/aiSettings'
 
 const tools = [
   { id: 'writingStyles' as const, icon: PenTool, label: '写作风格', docType: 'writingStyles' as const, entityId: 'writingStyles' },
@@ -57,6 +58,18 @@ export default function RightToolbar(): JSX.Element {
           </button>
         )
       })}
+
+      {/* 底部：设置 */}
+      <div className="mt-auto">
+        <button
+          onClick={() => useAISettingsStore.getState().setShowSettings(true)}
+          title="AI 设置"
+          className="relative flex items-center justify-center w-[36px] h-[36px] rounded-md transition-colors"
+          style={{ color: 'var(--color-activity-icon)' }}
+        >
+          <Settings size={20} strokeWidth={1.5} />
+        </button>
+      </div>
     </div>
   )
 }

@@ -319,7 +319,8 @@ export function deleteWorldSettingMD(projectPath: string, category: string, key:
 }
 
 export function stripChapterTitle(title: string): string {
-  return title.replace(/^(?:\d+\.[\s-]*|第\s*[一二三四五六七八九十百千\d]+\s*章\s*[·•.、．:\s-]*)+/, '').trim()
+  // 匹配各种章节编号前缀：第1章、第01章、第一章、第壹章、1.、第1回、第1节、Chapter 1、CHAPTER 1
+  return title.replace(/^(?:第\s*[零一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟\d]+\s*[章回节部]\s*[·•.、．：:\s-]*|\d+\.[\s-]*|[Cc]hapter\s+\d+[\s-:]*)+/, '').trim()
 }
 
 // ===== 章节 =====
