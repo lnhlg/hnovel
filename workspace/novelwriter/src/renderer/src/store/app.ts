@@ -187,6 +187,7 @@ interface AppState {
   editorMode: 'richtext' | 'markdown'
   // AI 对话参数（跨会话记忆）
   chatModel: string
+  chatProviderId: string
   chatReasoningEffort: 'low' | 'medium' | 'high' | 'max'
   // 操作
   loadProjects: () => Promise<void>
@@ -224,6 +225,7 @@ interface AppState {
   }) => Promise<{ data?: unknown; error?: string; raw?: string }>
   // AI 对话参数
   setChatModel: (model: string) => void
+  setChatProviderId: (providerId: string) => void
   setChatReasoningEffort: (effort: 'low' | 'medium' | 'high' | 'max') => void
   // 世界观设定操作
   loadWorldSettings: (projectId: string) => Promise<void>
@@ -290,6 +292,7 @@ export const useAppStore = create<AppState>()(
   editorContent: '',
   editorMode: 'richtext',
   chatModel: '',
+  chatProviderId: '',
   chatReasoningEffort: 'medium' as const,
   storyProgress: '',
 
@@ -311,6 +314,8 @@ export const useAppStore = create<AppState>()(
   setEditorMode: (mode) => set({ editorMode: mode }),
 
   setChatModel: (model) => set({ chatModel: model }),
+
+  setChatProviderId: (providerId) => set({ chatProviderId: providerId }),
 
   setChatReasoningEffort: (effort) => set({ chatReasoningEffort: effort }),
 
@@ -650,6 +655,7 @@ export const useAppStore = create<AppState>()(
     name: 'novelwriter-chat-prefs',
     partialize: (state) => ({
       chatModel: state.chatModel,
+      chatProviderId: state.chatProviderId,
       chatReasoningEffort: state.chatReasoningEffort
     })
   }

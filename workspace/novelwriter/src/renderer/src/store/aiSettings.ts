@@ -32,8 +32,19 @@ export const useAISettingsStore = create<AISettingsState>((set, get) => ({
 
   loadConfig: async () => {
     try {
-      const config = await window.api.getAIConfig?.() ?? get().config
-      set({ config })
+      // 从主进程加载当前活跃供应商的配置
+      const result = await window.api.getCurrentConfig?.()
+      if (result) {
+        const { provider, model } = result as { provider: { type: 'openai' | 'ollama'; apiKey: string; baseUrl: string } | null; model: string }
+        set({
+          config: {
+            provider: provider?.type ?? 'openai',
+            apiKey: provider?.apiKey ?? '',
+            baseUrl: provider?.baseUrl ?? '',
+            model: model ?? ''
+          }
+        })
+      }
     } catch {
       // ignore
     }

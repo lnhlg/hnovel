@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState, useEffect } from 'react'
+import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react'
 
 interface CharacterRelationGraphProps {
   projectId: string
@@ -55,15 +55,37 @@ export default function CharacterRelationGraph({
     return '#5b8def'
   }
 
+  // 已保存的节点位置（ref 作为可信源，避免闭包旧值问题）
+  const savedPosRef = useRef<Record<string, NodePos>>({})
+  const [positionsLoaded, setPositionsLoaded] = useState(false)
+
+  // 加载已保存的节点位置
   useEffect(() => {
+    if (!projectId) return
+    let cancelled = false
+    savedPosRef.current = {}
+    setPositionsLoaded(false)
+    window.api.getCharacterPositions(projectId).then((saved: Record<string, NodePos> | undefined) => {
+      if (cancelled) return
+      if (saved && typeof saved === 'object') {
+        savedPosRef.current = saved
+      }
+      setPositionsLoaded(true)
+    })
+    return () => { cancelled = true }
+  }, [projectId])
+
+  // 计算节点位置：已保存的优先，未保存的用圆形布局
+  const computeLayout = useCallback(() => {
     const n = characters.length
     const radius = Math.min(width, height) * 0.35
     const newMap = new Map<string, NodePos>()
+    const saved = savedPosRef.current
 
     characters.forEach((c, i) => {
-      const existing = nodePosMap.get(c.id)
+      const existing = saved[c.id]
       if (existing) {
-        newMap.set(c.id, existing)
+        newMap.set(c.id, { x: existing.x, y: existing.y })
       } else {
         const angle = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2
         newMap.set(c.id, {
@@ -73,8 +95,13 @@ export default function CharacterRelationGraph({
       }
     })
 
-    setNodePosMap(newMap)
+    return newMap
   }, [characters, width, height, centerX, centerY])
+
+  // 当 characters/尺寸变化 或 位置加载完成时，重新计算布局
+  useEffect(() => {
+    setNodePosMap(computeLayout())
+  }, [computeLayout, positionsLoaded])
 
   const updateNodePos = (id: string, x: number, y: number) => {
     setNodePosMap(prev => {
@@ -167,6 +194,16 @@ export default function CharacterRelationGraph({
 
   const handleMouseUp = () => {
     panningRef.current = false
+    if (draggingRef.current) {
+      // 拖拽结束，保存所有节点位置
+      const positions: Record<string, NodePos> = {}
+      nodePosMap.forEach((pos, id) => { positions[id] = pos })
+      if (projectId && Object.keys(positions).length > 0) {
+        window.api.saveCharacterPositions({ projectId, positions }).catch((err: unknown) => {
+          console.error('保存节点位置失败:', err)
+        })
+      }
+    }
     draggingRef.current = null
   }
 
@@ -181,6 +218,20 @@ export default function CharacterRelationGraph({
     setScale(1)
     if (graphRef.current) {
       graphRef.current.setAttribute('transform', 'translate(0, 0) scale(1)')
+    }
+  }
+
+  // 重置节点布局：清空保存的位置，重新圆形布局
+  const handleResetLayout = async () => {
+    savedPosRef.current = {}
+    setNodePosMap(computeLayout())
+    // 清空已保存的位置
+    if (projectId) {
+      try {
+        await window.api.saveCharacterPositions({ projectId, positions: {} })
+      } catch (err: unknown) {
+        console.error('清空节点位置失败:', err)
+      }
     }
   }
 
@@ -454,11 +505,25 @@ export default function CharacterRelationGraph({
         >
           重置视图
         </button>
+        <button
+          onClick={handleResetLayout}
+          style={{
+            padding: '2px 8px',
+            borderRadius: 4,
+            border: '1px solid var(--color-border)',
+            backgroundColor: 'var(--color-surface)',
+            color: 'var(--color-text-secondary)',
+            cursor: 'pointer',
+            fontSize: 11
+          }}
+        >
+          重置布局
+        </button>
         <span style={{ alignSelf: 'center' }}>
           {Math.round(scale * 100)}%
         </span>
         <span style={{ alignSelf: 'center', color: 'var(--color-text-dim)' }}>
-          滚轮缩放 · Shift+拖拽平移
+          滚轮缩放 · Shift+拖拽平移 · 拖拽节点自动保存
         </span>
       </div>
       </div>

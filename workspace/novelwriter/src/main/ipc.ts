@@ -12,11 +12,13 @@ import {
   loadTimelines, saveTimeline, deleteTimeline,
   loadLocations, saveLocation, deleteLocation,
   loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
+  loadCharacterPositions, saveCharacterPositions,
   loadInspirations, saveInspiration, deleteInspiration,
   loadWritingLogs, saveWritingLog, deleteWritingLog,
   loadReferences, saveReference, deleteReference,
   loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder
+  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
+  loadAIProviders
 } from './fileStorage'
 import {
   getActiveProvider,
@@ -591,6 +593,8 @@ export function registerAIOutineHandlers(): void {
     synopsis: string
     chapterTitle: string
     chapterOutline: string
+    providerId?: string
+    model?: string
     previousChapters: { title: string; content: string }[]
   }) => {
     const window = BrowserWindow.getFocusedWindow()
@@ -674,12 +678,14 @@ export function registerAIOutineHandlers(): void {
       loadActiveProvider()
       provider = getActiveProvider()
     }
-
+    if (opts.providerId) {
+      provider = loadAIProviders().find(p => p.id === opts.providerId) ?? provider
+    }
     if (!provider) {
       throw new Error('请先配置 AI 供应商并设为当前使用')
     }
 
-    const model = await ensureModel(provider)
+    const model = opts.model || await ensureModel(provider)
 
     if (provider.type === 'ollama') {
       return await chatOllama(provider, model, messages as ChatMessage[], sendChunk)
@@ -693,6 +699,8 @@ export function registerAIOutineHandlers(): void {
     synopsis: string
     numChapters: number
     genre?: string
+    providerId?: string
+    model?: string
   }) => {
     const window = BrowserWindow.getFocusedWindow()
     const sendChunk = window ? (chunk: string) => window.webContents.send('ai:chunk', chunk) : () => {}
@@ -724,12 +732,14 @@ ${opts.synopsis}
       loadActiveProvider()
       provider = getActiveProvider()
     }
-
+    if (opts.providerId) {
+      provider = loadAIProviders().find(p => p.id === opts.providerId) ?? provider
+    }
     if (!provider) {
       throw new Error('请先配置 AI 供应商并设为当前使用')
     }
 
-    const model = await ensureModel(provider)
+    const model = opts.model || await ensureModel(provider)
 
     let result: string
     if (provider.type === 'ollama') {
@@ -1289,7 +1299,7 @@ export function registerAIWizardHandlers(): void {
   })
 
   // 发送消息给 AI 向导
-  ipcMain.handle('wizard:send', async (event, sessionId: string, userMessage: string, model?: string) => {
+  ipcMain.handle('wizard:send', async (event, sessionId: string, userMessage: string, model?: string, providerId?: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const session = wizardSessions.get(sessionId)
     if (!session) {
@@ -1305,13 +1315,16 @@ export function registerAIWizardHandlers(): void {
       loadActiveProvider()
       provider = getActiveProvider()
     }
+    if (providerId) {
+      provider = loadAIProviders().find(p => p.id === providerId) ?? provider
+    }
 
     if (!provider) {
       throw new Error('请先配置 AI 供应商并设为当前使用')
     }
 
     // 使用传入的模型，如果没有则自动获取
-    let selectedModel = model || getCurrentModel()
+    let selectedModel = model || provider.model || (provider.id === getActiveProvider()?.id ? getCurrentModel() : '')
     if (!selectedModel) {
       selectedModel = await ensureModel(provider)
     }
@@ -1345,7 +1358,7 @@ export function registerAIWizardHandlers(): void {
   })
 
   // 重新生成最后一条回复
-  ipcMain.handle('wizard:regenerate', async (event, sessionId: string, model?: string) => {
+  ipcMain.handle('wizard:regenerate', async (event, sessionId: string, model?: string, providerId?: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const session = wizardSessions.get(sessionId)
     if (!session) {
@@ -1386,11 +1399,14 @@ export function registerAIWizardHandlers(): void {
       loadActiveProvider()
       provider = getActiveProvider()
     }
+    if (providerId) {
+      provider = loadAIProviders().find(p => p.id === providerId) ?? provider
+    }
     if (!provider) {
       throw new Error('请先配置 AI 供应商并设为当前使用')
     }
 
-    let selectedModel = model || getCurrentModel()
+    let selectedModel = model || provider.model || (provider.id === getActiveProvider()?.id ? getCurrentModel() : '')
     if (!selectedModel) {
       selectedModel = await ensureModel(provider)
     }
@@ -2042,6 +2058,15 @@ export function registerCharacterRelationHandlers(): void {
       }
     }
     return { success: true }
+  })
+
+  // 角色关系图节点位置
+  ipcMain.handle('characterPosition:list', (_event, projectId: string) => {
+    return loadCharacterPositions(projectId)
+  })
+
+  ipcMain.handle('characterPosition:save', (_event, data: { projectId: string; positions: Record<string, { x: number; y: number }> }) => {
+    return saveCharacterPositions(data.projectId, data.positions)
   })
 }
 
@@ -2754,6 +2779,8 @@ interface GenerateAssetRequest {
   }
   hint?: string  // 用户附加的提示
   count?: number // 批量生成数量
+  providerId?: string // 可选：指定供应商，不传则用活跃供应商
+  model?: string // 可选：指定模型，不传则用供应商保存的模型
 }
 
 function buildAssetPrompt(req: GenerateAssetRequest): { system: string; user: string } {
@@ -2869,11 +2896,14 @@ export function registerAIAssetHandlers(): void {
       loadActiveProvider()
       provider = getActiveProvider()
     }
+    if (req.providerId) {
+      provider = loadAIProviders().find(p => p.id === req.providerId) ?? provider
+    }
     if (!provider) {
       throw new Error('请先配置 AI 供应商并设为当前使用')
     }
 
-    const model = await ensureModel(provider)
+    const model = req.model || await ensureModel(provider)
     const { system, user } = buildAssetPrompt(req)
 
     let result: string

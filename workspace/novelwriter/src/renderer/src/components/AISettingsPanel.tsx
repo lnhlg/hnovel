@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { RefreshCw, Plus, Trash2, Check, Edit2, X, CheckCircle2, Wifi, WifiOff } from 'lucide-react'
+import { useAISettingsStore } from '../store/aiSettings'
 
 interface AIProvider {
   id: string
@@ -117,11 +118,23 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
     await loadProviders()
     setCurrentModel('')
     setTestResult(null)
+    // 同步 Zustand store 以便状态栏显示当前供应商信息
+    const activeProvider = providers.find(p => p.id === providerId)
+    if (activeProvider) {
+      useAISettingsStore.getState().setConfig({
+        provider: activeProvider.type,
+        apiKey: activeProvider.apiKey,
+        baseUrl: activeProvider.baseUrl,
+        model: ''
+      })
+    }
   }
 
   const handleSetModel = async (model: string): Promise<void> => {
     await window.api.setModel?.(model)
     setCurrentModel(model)
+    // 同步 Zustand store 以便状态栏显示正确的模型名
+    useAISettingsStore.getState().setConfig({ model })
   }
 
   const handleSaveProvider = async (): Promise<void> => {

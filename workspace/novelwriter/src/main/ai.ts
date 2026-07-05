@@ -63,6 +63,20 @@ export function loadActiveProvider(): AIProvider | null {
   return null
 }
 
+// 判断是否为支持 reasoning_effort 参数的推理/思考模型
+// 包括：OpenAI o1/o3/o4/gpt-5 系列、DeepSeek V4/R1 系列、含 reasoning/reasoner/thinking 关键字的模型
+// 其他模型传该参数会触发 400 Bad Request
+function isReasoningModel(model: string): boolean {
+  const m = model.toLowerCase()
+  return (
+    /^(o1|o3|o4|gpt-5)/.test(m) ||
+    /^deepseek-(v4|r1)/.test(m) ||
+    m.includes('reasoning') ||
+    m.includes('reasoner') ||
+    m.includes('thinking')
+  )
+}
+
 // OpenAI 兼容 API 调用（非流式）
 export async function chatOpenAI(
   provider: AIProvider,
@@ -72,7 +86,8 @@ export async function chatOpenAI(
   reasoningEffort?: 'low' | 'medium' | 'high' | 'max'
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
-  
+  const shouldSendReasoningEffort = reasoningEffort && isReasoningModel(model)
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -83,13 +98,14 @@ export async function chatOpenAI(
       model,
       messages,
       stream: false,
-      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
+      ...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {})
     }),
     signal
   })
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`)
+    const errBody = await response.text().catch(() => '')
+    throw new Error(`API error: ${response.status} ${response.statusText}${errBody ? ` - ${errBody.slice(0, 500)}` : ''}`)
   }
 
   const data = await response.json()
@@ -106,7 +122,8 @@ export async function chatOpenAIStream(
   reasoningEffort?: 'low' | 'medium' | 'high' | 'max'
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
-  
+  const shouldSendReasoningEffort = reasoningEffort && isReasoningModel(model)
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -117,13 +134,14 @@ export async function chatOpenAIStream(
       model,
       messages,
       stream: true,
-      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
+      ...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {})
     }),
     signal
   })
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`)
+    const errBody = await response.text().catch(() => '')
+    throw new Error(`API error: ${response.status} ${response.statusText}${errBody ? ` - ${errBody.slice(0, 500)}` : ''}`)
   }
 
   const reader = response.body?.getReader()
@@ -496,36 +514,59 @@ export function registerAIHandlers(): void {
     }
   })
 
-  // AI 聊天（使用当前活跃供应商和模型，可通过 options.model 临时切换模型）
-  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max' }) => {
+  // AI 聊天（默认用活跃供应商，可通过 options.providerId 临时切换到任意供应商，options.model 切换模型）
+  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max' }) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const isStream = options?.stream ?? false
-    const model = options?.model || currentModel
     const reasoningEffort = options?.reasoningEffort
 
-    if (!activeProvider) {
+    // 选择供应商：优先用 options.providerId 指定的，否则回退到活跃供应商
+    let provider = activeProvider
+    if (options?.providerId) {
+      provider = loadAIProviders().find(p => p.id === options.providerId) ?? activeProvider
+    }
+    if (!provider) {
       throw new Error('请先配置 AI 供应商')
     }
 
+    // 模型：优先 options.model，其次该供应商保存的 model，最后全局 currentModel
+    const model = options?.model || provider.model || (provider.id === activeProvider?.id ? currentModel : '')
     if (!model) {
       throw new Error('请先选择模型')
     }
 
-    if (activeProvider.type === 'ollama') {
+    if (provider.type === 'ollama') {
       if (isStream && window) {
-        return await chatOllama(activeProvider, model, messages, (chunk) => {
+        return await chatOllama(provider, model, messages, (chunk) => {
           window.webContents.send('ai:chunk', chunk)
         })
       }
-      return await chatOllama(activeProvider, model, messages)
+      return await chatOllama(provider, model, messages)
     } else {
       if (isStream && window) {
-        return await chatOpenAIStream(activeProvider, model, messages, (chunk) => {
+        return await chatOpenAIStream(provider, model, messages, (chunk) => {
           window.webContents.send('ai:chunk', chunk)
         }, undefined, reasoningEffort)
       }
-      return await chatOpenAI(activeProvider, model, messages, undefined, reasoningEffort)
+      return await chatOpenAI(provider, model, messages, undefined, reasoningEffort)
     }
+  })
+
+  // 一次性返回所有供应商的所有模型，用于渲染进程构建"供应商/模型"组合下拉框
+  ipcMain.handle('ai:listAllModels', async () => {
+    const providers = loadAIProviders()
+    const result: { providerId: string; providerName: string; modelId: string; modelName: string }[] = []
+    for (const p of providers) {
+      try {
+        const models = p.type === 'ollama' ? await listOllamaModels(p) : await listOpenAIModels(p)
+        for (const m of models) {
+          result.push({ providerId: p.id, providerName: p.name, modelId: m.id, modelName: m.name })
+        }
+      } catch {
+        // 单个供应商失败不影响其他
+      }
+    }
+    return result
   })
 
   // 供其他模块调用的聊天接口（指定供应商和模型）

@@ -403,6 +403,22 @@ export function deleteCharacterRelation(projectId: string, id: string): void {
   storeFor<CharacterRelation>(projectId, 'characterRelations.json').delete(id)
 }
 
+// 角色关系图节点位置：{ [characterId]: { x, y } }
+export type CharacterPositions = Record<string, { x: number; y: number }>
+
+export function loadCharacterPositions(projectId: string): CharacterPositions {
+  const path = entityPath(projectId, 'characterPositions.json')
+  if (!path) return {}
+  return readJson<CharacterPositions>(path) ?? {}
+}
+
+export function saveCharacterPositions(projectId: string, positions: CharacterPositions): CharacterPositions {
+  const path = entityPath(projectId, 'characterPositions.json')
+  if (!path) return positions
+  writeJson(path, positions)
+  return positions
+}
+
 export function loadInspirations(projectId: string): Inspiration[] {
   return storeFor<Inspiration>(projectId, 'inspirations.json').load()
 }

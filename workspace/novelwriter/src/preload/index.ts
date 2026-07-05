@@ -48,6 +48,7 @@ const api = {
   setActiveProvider: (providerId: string) => ipcRenderer.invoke('ai:setActiveProvider', providerId),
   deleteProvider: (providerId: string) => ipcRenderer.invoke('ai:deleteProvider', providerId),
   listModels: (providerId?: string) => ipcRenderer.invoke('ai:listModels', providerId),
+  listAllModels: () => ipcRenderer.invoke('ai:listAllModels'),
   testConnection: (arg?: string | { type: string; baseUrl: string; apiKey?: string }) => ipcRenderer.invoke('ai:testConnection', arg),
 
   // 大纲
@@ -62,8 +63,8 @@ const api = {
 
   // AI 向导（引导式项目创建）
   wizardInit: (sessionId: string) => ipcRenderer.invoke('wizard:init', sessionId),
-  wizardSend: (sessionId: string, message: string, model?: string) => ipcRenderer.invoke('wizard:send', sessionId, message, model),
-  wizardRegenerate: (sessionId: string, model?: string) => ipcRenderer.invoke('wizard:regenerate', sessionId, model),
+  wizardSend: (sessionId: string, message: string, model?: string, providerId?: string) => ipcRenderer.invoke('wizard:send', sessionId, message, model, providerId),
+  wizardRegenerate: (sessionId: string, model?: string, providerId?: string) => ipcRenderer.invoke('wizard:regenerate', sessionId, model, providerId),
   wizardCreateProject: (sessionId: string, folderPath: string) =>
     ipcRenderer.invoke('wizard:createProject', sessionId, folderPath),
   wizardEnd: (sessionId: string) => ipcRenderer.invoke('wizard:end', sessionId),
@@ -102,6 +103,10 @@ const api = {
   getCharacterRelations: (projectId: string) => ipcRenderer.invoke('characterRelation:list', projectId),
   saveCharacterRelation: (data: unknown) => ipcRenderer.invoke('characterRelation:save', data),
   deleteCharacterRelation: (id: string) => ipcRenderer.invoke('characterRelation:delete', id),
+
+  // 角色关系图节点位置
+  getCharacterPositions: (projectId: string) => ipcRenderer.invoke('characterPosition:list', projectId),
+  saveCharacterPositions: (data: { projectId: string; positions: Record<string, { x: number; y: number }> }) => ipcRenderer.invoke('characterPosition:save', data),
 
   // 灵感记录
   getInspirations: (projectId: string) => ipcRenderer.invoke('inspiration:list', projectId),

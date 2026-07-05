@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown, RefreshCw } from 'lucide-react'
+import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown } from 'lucide-react'
 import { useAppStore, type Character, type WorldSetting, type Location, type Timeline, type CharacterRelation, type Inspiration, type Reference } from '../../store/app'
+import ModelSelector from '../ModelSelector'
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -140,7 +141,7 @@ interface AIChatDialogProps {
 }
 
 export default function AIChatDialog({ open, onClose, entityType, projectId, chapterId }: AIChatDialogProps): JSX.Element | null {
-  const { characters, worldSettings, locations, saveCharacter, saveWorldSetting, saveLocation, loadCharacters, loadWorldSettings, loadLocations, saveChapterOutline, storyProgress, loadStoryProgress, chapters, loadChapters, chatModel, chatReasoningEffort, setChatModel, setChatReasoningEffort } = useAppStore()
+  const { characters, worldSettings, locations, saveCharacter, saveWorldSetting, saveLocation, loadCharacters, loadWorldSettings, loadLocations, saveChapterOutline, storyProgress, loadStoryProgress, chapters, loadChapters, chatModel, chatProviderId, chatReasoningEffort, setChatModel, setChatProviderId, setChatReasoningEffort } = useAppStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -148,10 +149,8 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState('')
   const [applyDone, setApplyDone] = useState(false)
-  const [models, setModels] = useState<{ id: string; name: string }[]>([])
   const [selectedModel, setSelectedModel] = useState(chatModel || '')
-  const [showModelDropdown, setShowModelDropdown] = useState(false)
-  const [isLoadingModels, setIsLoadingModels] = useState(false)
+  const [selectedProviderId, setSelectedProviderId] = useState(chatProviderId || '')
   const [reasoningEffort, setReasoningEffort] = useState<'low' | 'medium' | 'high' | 'max'>(chatReasoningEffort)
   const [showEffortDropdown, setShowEffortDropdown] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -239,30 +238,25 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     setApplyError('')
     streamContentRef.current = ''
 
-    // 加载模型列表
-    setIsLoadingModels(true)
-    window.api.getCurrentConfig?.().then((cfg: { model?: string }) => {
-      if (cfg?.model) setSelectedModel(cfg.model)
-    }).catch(() => {})
-    window.api.listModels?.().then((list: { id: string; name: string }[]) => {
-      if (list && Array.isArray(list)) {
-        setModels(list)
-        if (list.length > 0 && !selectedModel) setSelectedModel(list[0].id)
-      }
-    }).catch(() => {}).finally(() => setIsLoadingModels(false))
+    // 模型列表由 ModelSelector 组件自行加载，这里只回退当前活跃供应商的模型作为默认
+    if (!selectedModel) {
+      window.api.getCurrentConfig?.().then((cfg: { model?: string }) => {
+        if (cfg?.model) setSelectedModel(cfg.model)
+      }).catch(() => {})
+    }
 
     return () => {
       cleanupRef.current?.()
     }
   }, [open, entityType])
 
-  // 点击外部关闭模型下拉
-  useEffect(() => {
-    if (!showModelDropdown) return
-    const close = () => setShowModelDropdown(false)
-    window.addEventListener('click', close)
-    return () => window.removeEventListener('click', close)
-  }, [showModelDropdown])
+  // 选中变化时同步到全局 store（跨对话框记忆）
+  const handleModelChange = useCallback((providerId: string, modelId: string): void => {
+    setSelectedProviderId(providerId)
+    setSelectedModel(modelId)
+    setChatProviderId(providerId)
+    setChatModel(modelId)
+  }, [setChatProviderId, setChatModel])
 
   // 点击外部关闭推理力度下拉
   useEffect(() => {
@@ -328,7 +322,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     cleanupRef.current = chunkCleanup ?? null
 
     try {
-        const result = await window.api.aiChat(apiMessages, { stream: true, model: selectedModel || undefined, reasoningEffort })
+        const result = await window.api.aiChat(apiMessages, { stream: true, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort })
       if (result) {
         streamContentRef.current = result
         setMessages((prev) => {
@@ -353,7 +347,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
                 '请把刚才的修改数据用 JSON 数组放在 ```json 代码块中输出，不要其他文字。'
             }
           ]
-          const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, reasoningEffort })
+          const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort })
           if (jsonResult) {
             parsed = parseJsonBlocks(jsonResult)
           }
@@ -567,57 +561,15 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
             <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
               AI 对话创建{ENTITY_CONFIG[entityType]?.label || ''}
             </h2>
-            {/* 模型选择器 */}
-            <div className="relative ml-2">
-              <button
-                type="button"
-                onClick={() => setShowModelDropdown(!showModelDropdown)}
-                disabled={loading || isLoadingModels}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors"
-                style={{
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
-                  minWidth: 100
-                }}
-              >
-                {isLoadingModels ? (
-                  <RefreshCw size={10} className="animate-spin" />
-                ) : (
-                  <>
-                    <span className="truncate">{selectedModel || '选择模型'}</span>
-                    <ChevronDown size={10} />
-                  </>
-                )}
-              </button>
-              {showModelDropdown && (
-                <div
-                  className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-lg overflow-hidden min-w-[160px]"
-                  style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-                >
-                  {models.length > 0 ? (
-                    <div className="py-1">
-                      {models.map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => { setSelectedModel(m.id); setShowModelDropdown(false) }}
-                          className="w-full px-3 py-1.5 text-left text-xs transition-colors"
-                          style={{
-                            color: m.id === selectedModel ? 'var(--color-accent)' : 'var(--color-text)',
-                            backgroundColor: m.id === selectedModel ? 'var(--color-accent-light)' : 'transparent'
-                          }}
-                          onMouseEnter={e => { if (m.id !== selectedModel) e.currentTarget.style.backgroundColor = 'var(--color-hover)' }}
-                          onMouseLeave={e => { if (m.id !== selectedModel) e.currentTarget.style.backgroundColor = 'transparent' }}
-                        >
-                          {m.name || m.id}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="px-3 py-2 text-xs" style={{ color: 'var(--color-text-dim)' }}>暂无可用模型</div>
-                  )}
-                </div>
-              )}
+            {/* 模型选择器（跨供应商） */}
+            <div className="ml-2">
+              <ModelSelector
+                providerId={selectedProviderId}
+                model={selectedModel}
+                onChange={handleModelChange}
+                disabled={loading}
+                minWidth={140}
+              />
             </div>
             {/* 推理力度选择器 */}
             <div className="relative ml-2">

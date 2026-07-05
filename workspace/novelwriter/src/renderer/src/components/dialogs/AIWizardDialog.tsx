@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Send, Sparkles, FolderOpen, Check, Loader2, ChevronDown, RefreshCw, Edit3 } from 'lucide-react'
+import { X, Send, Sparkles, FolderOpen, Check, Loader2, RefreshCw, Edit3 } from 'lucide-react'
+import ModelSelector from '../ModelSelector'
 
 interface WizardMessage {
   role: 'user' | 'assistant'
@@ -19,11 +20,6 @@ interface WizardProjectData {
   characterRelations: { character1Name: string; character2Name: string; relation: string; description: string }[]
   inspirations: { title: string; type: string; content: string; source: string }[]
   references: { title: string; type: string; url: string; notes: string }[]
-}
-
-interface AIModel {
-  id: string
-  name: string
 }
 
 interface AIWizardDialogProps {
@@ -46,10 +42,8 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
   const [pickingFolder, setPickingFolder] = useState(false)
   const [creating, setCreating] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  const [models, setModels] = useState<AIModel[]>([])
   const [selectedModel, setSelectedModel] = useState<string>('')
-  const [isLoadingModels, setIsLoadingModels] = useState(false)
-  const [showModelDropdown, setShowModelDropdown] = useState(false)
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('')
   const [step, setStep] = useState<'selectFolder' | 'chat'>('selectFolder') // 新增步骤状态
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editingContent, setEditingContent] = useState('')
@@ -77,24 +71,12 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
       setSelectedOptions([])
       streamContentRef.current = ''
 
-      const loadModels = async () => {
-        setIsLoadingModels(true)
-        try {
-          const modelList = await window.api.listModels?.()
-          if (modelList && Array.isArray(modelList)) {
-            setModels(modelList)
-            if (modelList.length > 0 && !selectedModel) {
-              setSelectedModel(modelList[0].id)
-            }
-          }
-        } catch (err) {
-          console.error('加载模型列表失败:', err)
-        } finally {
-          setIsLoadingModels(false)
-        }
+      // 模型列表由 ModelSelector 自行加载；这里只在没有选中时回退到当前活跃供应商的模型
+      if (!selectedModel) {
+        window.api.getCurrentConfig?.().then((cfg: { model?: string }) => {
+          if (cfg?.model) setSelectedModel(cfg.model)
+        }).catch(() => {})
       }
-
-      loadModels()
     } else {
       if (sessionIdRef.current) {
         window.api.wizardEnd?.(sessionIdRef.current).catch(() => {})
@@ -131,7 +113,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
       setMessages([{ role: 'assistant', content: '' }])
 
       try {
-        const result = await window.api.wizardSend?.(sessionIdRef.current, '你好，我想创建一个小说项目', selectedModel)
+        const result = await window.api.wizardSend?.(sessionIdRef.current, '你好，我想创建一个小说项目', selectedModel, selectedProviderId || undefined)
         if (result) {
           streamContentRef.current = result.content
           setMessages((prev) => {
@@ -223,7 +205,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel)
+      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel, selectedProviderId || undefined)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -273,7 +255,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel)
+      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel, selectedProviderId || undefined)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -330,7 +312,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardRegenerate?.(sessionIdRef.current, selectedModel)
+      const result = await window.api.wizardRegenerate?.(sessionIdRef.current, selectedModel, selectedProviderId || undefined)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -381,7 +363,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     setEditingContent('')
 
     try {
-      await window.api.wizardSend?.(sessionIdRef.current, editingContent.trim(), selectedModel)
+      await window.api.wizardSend?.(sessionIdRef.current, editingContent.trim(), selectedModel, selectedProviderId || undefined)
     } catch (err) {
       console.error('编辑后重新发送失败:', err)
     }
@@ -412,7 +394,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardSend?.(sessionIdRef.current, triggerMsg, selectedModel)
+      const result = await window.api.wizardSend?.(sessionIdRef.current, triggerMsg, selectedModel, selectedProviderId || undefined)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -522,63 +504,19 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
             </h2>
           </div>
           
-          {/* 模型选择器 */}
+          {/* 模型选择器（跨供应商） */}
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowModelDropdown(!showModelDropdown)}
-                disabled={isLoading || creating}
-                className="btn btn-ghost flex items-center gap-1.5 text-xs"
-                style={{ minWidth: 140 }}
-              >
-                {isLoadingModels ? (
-                  <RefreshCw size={12} className="animate-spin" />
-                ) : (
-                  <>
-                    {selectedModel || '选择模型'}
-                    <ChevronDown size={12} />
-                  </>
-                )}
-              </button>
-              {showModelDropdown && (
-                <div
-                  className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg overflow-hidden min-w-[180px]"
-                  style={{
-                    backgroundColor: 'var(--color-surface)',
-                    border: '1px solid var(--color-border)'
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {models.length > 0 ? (
-                    <div className="py-1">
-                      {models.map((model) => (
-                        <button
-                          key={model.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedModel(model.id)
-                            setShowModelDropdown(false)
-                          }}
-                          className="w-full px-3 py-2 text-left text-xs hover:bg-accent-light"
-                          style={{
-                            color: model.id === selectedModel ? 'var(--color-accent)' : 'var(--color-text)',
-                            backgroundColor: model.id === selectedModel ? 'var(--color-accent-light)' : 'transparent'
-                          }}
-                        >
-                          {model.name || model.id}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="px-3 py-2 text-xs text-text-secondary">
-                      暂无可用模型
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            
+            <ModelSelector
+              providerId={selectedProviderId}
+              model={selectedModel}
+              onChange={(pid, mid) => {
+                setSelectedProviderId(pid)
+                setSelectedModel(mid)
+              }}
+              disabled={isLoading || creating}
+              minWidth={160}
+            />
+
             <button
               onClick={onClose}
               disabled={isLoading || creating}
@@ -645,7 +583,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
               <button
                 type="button"
                 onClick={startChat}
-                disabled={!folderPath.trim() || isLoadingModels || pickingFolder}
+                disabled={!folderPath.trim() || pickingFolder}
                 className="btn btn-primary w-full flex items-center justify-center gap-2"
               >
                 <Sparkles size={16} />

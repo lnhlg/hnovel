@@ -73,7 +73,7 @@ function App(): JSX.Element {
     characterRelations
   } = useAppStore()
 
-  const { showSettings, setShowSettings } = useAISettingsStore()
+  const { showSettings, setShowSettings, loadConfig } = useAISettingsStore()
   const sidebarView = useLayoutStore((s) => s.sidebarView)
   const openDocs = useLayoutStore((s) => s.openDocs)
   const activeDocId = useLayoutStore((s) => s.activeDocId)
@@ -89,6 +89,7 @@ function App(): JSX.Element {
   useEffect(() => {
     initTheme()
     loadProjects()
+    loadConfig()
   }, [])
 
   useEffect(() => {

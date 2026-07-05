@@ -57,6 +57,7 @@ export default function Sidebar(): JSX.Element {
   const [showAIWizard, setShowAIWizard] = useState(false)
   const [showScanChars, setShowScanChars] = useState(false)
   const [scanText, setScanText] = useState('')
+  const [scanChapterContents, setScanChapterContents] = useState<string[]>([])
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chapterId: string } | null>(null)
   const [renameChapterId, setRenameChapterId] = useState<string | null>(null)
@@ -383,10 +384,11 @@ export default function Sidebar(): JSX.Element {
                           <button
                             onClick={async () => {
                               if (!currentProject) return
-                              // 收集所有章节正文
-                              const allText = chapters.map(c => c.content).filter(Boolean).join('\n\n').slice(0, 30000)
-                              if (!allText.trim()) { alert('章节内容为空，无法扫描'); return }
-                              setScanText(allText)
+                              // 收集所有章节正文（不再截断，由对话框分章扫描）
+                              const contents = chapters.map(c => c.content).filter(Boolean)
+                              if (contents.length === 0) { alert('章节内容为空，无法扫描'); return }
+                              setScanText(contents.join('\n\n'))
+                              setScanChapterContents(contents)
                               setShowScanChars(true)
                             }}
                             className="flex items-center gap-1 px-2 py-1 text-xs w-full rounded-sm transition-colors"
@@ -524,6 +526,7 @@ export default function Sidebar(): JSX.Element {
           open={showScanChars}
           onClose={() => setShowScanChars(false)}
           sourceText={scanText}
+          chapterContents={scanChapterContents}
           projectId={currentProject.id}
         />
       )}

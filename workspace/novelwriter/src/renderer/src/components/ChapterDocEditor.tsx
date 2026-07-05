@@ -5,6 +5,7 @@ import { useAppStore } from '../store/app'
 import ExtractCharactersDialog from './dialogs/ExtractCharactersDialog'
 import AIChatDialog from './dialogs/AIChatDialog'
 import AIGenerateDialog from './AIGenerateDialog'
+import ModelSelector from './ModelSelector'
 
 interface ChapterDocEditorProps {
   doc: OpenDoc
@@ -89,8 +90,10 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const loadChapters = useAppStore((s) => s.loadChapters)
   const chapters = useAppStore((s) => s.chapters)
   const chatModel = useAppStore((s) => s.chatModel)
+  const chatProviderId = useAppStore((s) => s.chatProviderId)
   const chatReasoningEffort = useAppStore((s) => s.chatReasoningEffort)
   const setChatModel = useAppStore((s) => s.setChatModel)
+  const setChatProviderId = useAppStore((s) => s.setChatProviderId)
   const setChatReasoningEffort = useAppStore((s) => s.setChatReasoningEffort)
   const skills = useAppStore((s) => s.skills)
 
@@ -107,13 +110,13 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [showAiPolish, setShowAiPolish] = useState(false)
   const [polishInstruction, setPolishInstruction] = useState('')
   const [polishing, setPolishing] = useState(false)
+  const [polishError, setPolishError] = useState('')
   const [polishResult, setPolishResult] = useState('')
   const [polishCtxBefore, setPolishCtxBefore] = useState('')
   const [polishCtxAfter, setPolishCtxAfter] = useState('')
-  const [polishModels, setPolishModels] = useState<{ id: string; name: string }[]>([])
   const [polishModel, setPolishModel] = useState('')
+  const [polishProviderId, setPolishProviderId] = useState('')
   const [polishEffort, setPolishEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium')
-  const [showPolishModelDropdown, setShowPolishModelDropdown] = useState(false)
   const [showPolishEffortDropdown, setShowPolishEffortDropdown] = useState(false)
   const [polishHistory, setPolishHistory] = useState<string[]>([])
   const [showPolishHistory, setShowPolishHistory] = useState(false)
@@ -419,12 +422,11 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }
     setPolishInstruction(skill.content)
     setPolishModel(chatModel || '')
+    setPolishProviderId(chatProviderId || '')
     setPolishEffort(chatReasoningEffort)
-    window.api.listModels?.().then((list: { id: string; name: string }[]) => {
-      if (list?.[0]) setPolishModels(list)
-    }).catch(() => {})
     setShowAiPolish(true)
     setPolishResult('')
+    setPolishError('')
     setDeAiMode(true)
   }
 
@@ -432,6 +434,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     if (!polishInstruction.trim() || !extractText.trim() || polishing) return
     setPolishing(true)
     setPolishResult('')
+    setPolishError('')
     try {
       const userMsg = polishCtxBefore || polishCtxAfter
         ? `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
@@ -443,7 +446,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         { role: 'system', content: '你是一位专业的小说文本润色编辑。请根据用户的要求，仅对标记为【目标文本】的段落进行润色加工。只返回润色后的文本，不要加任何解释或标记。' },
         { role: 'user', content: userMsg }
       ]
-      const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, reasoningEffort: polishEffort })
+      const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, providerId: polishProviderId || undefined, reasoningEffort: polishEffort })
       if (result) {
         setPolishResult(result.trim())
         // 保存指令到历史
@@ -452,7 +455,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         localStorage.setItem('novelwriter-polish-history', JSON.stringify(h))
       }
     } catch (err) {
-      alert('润色失败：' + (err instanceof Error ? err.message : String(err)))
+      // 不使用 alert：alert 是同步阻塞弹窗，会窃取焦点导致 ModelSelector 搜索框无法 refocus
+      setPolishError('润色失败：' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setPolishing(false)
     }
@@ -717,12 +721,11 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                   setContextMenu(null)
                   setShowAiPolish(true)
                   setPolishResult('')
+                  setPolishError('')
                   setPolishInstruction('')
                   setPolishModel(chatModel || '')
+                  setPolishProviderId(chatProviderId || '')
                   setPolishEffort(chatReasoningEffort)
-                  window.api.listModels?.().then((list: { id: string; name: string }[]) => {
-                    if (list?.[0]) setPolishModels(list)
-                  }).catch(() => {})
                 }}
               >
                 <Sparkles size={12} />
@@ -760,6 +763,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           open={showExtract}
           onClose={() => setShowExtract(false)}
           sourceText={extractText}
+          chapterContents={[]}
           projectId={currentProject.id}
         />
       )}
@@ -806,36 +810,53 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       {/* AI 润色对话框 */}
       {showAiPolish && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setShowAiPolish(false); setDeAiMode(false) }}>
-          <div className="w-full max-w-4xl max-h-[95vh] mx-8 rounded-xl bg-white p-6 shadow-2xl flex flex-col" style={{ backgroundColor: 'var(--color-surface)' }} onClick={e => e.stopPropagation()}>
+          <div
+            className="w-full rounded-xl bg-white p-6 shadow-2xl flex flex-col"
+            style={{ backgroundColor: 'var(--color-surface)', width: '96vw', maxWidth: '1800px', height: '94vh' }}
+            onClick={e => e.stopPropagation()}
+          >
             <h2 className="mb-1 text-lg font-semibold" style={{ color: 'var(--color-text)' }}>{deAiMode ? '去AI味' : 'AI 润色'}</h2>
             <p className="mb-3 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
               选中 {extractText.length} 个字符
             </p>
 
+            {/* 错误提示（非阻塞，避免 alert 窃取焦点） */}
+            {polishError && (
+              <div
+                className="mb-3 px-3 py-2 rounded text-xs flex items-start justify-between gap-2"
+                style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: 'rgb(185, 28, 28)'
+                }}
+              >
+                <span className="flex-1 break-all whitespace-pre-wrap">{polishError}</span>
+                <button
+                  type="button"
+                  onClick={() => setPolishError('')}
+                  className="text-xs hover:opacity-70 flex-shrink-0"
+                  style={{ color: 'rgb(185, 28, 28)' }}
+                  title="关闭"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* 模型选择器 + 推理力度 */}
             <div className="flex items-center gap-2 mb-3">
-              {polishModels.length > 0 && (
-                <div className="relative">
-                  <button onClick={() => setShowPolishModelDropdown(!showPolishModelDropdown)}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs"
-                    style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', minWidth: 120 }}>
-                    <span className="truncate">{polishModel || '选择模型'}</span>
-                    <ChevronDown size={10} />
-                  </button>
-                  {showPolishModelDropdown && (
-                    <div className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-lg max-h-48 overflow-y-auto min-w-[160px]"
-                      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                      {polishModels.map(m => (
-                        <button key={m.id} onClick={() => { setPolishModel(m.id); setChatModel(m.id); setShowPolishModelDropdown(false) }}
-                          className="w-full px-3 py-1.5 text-left text-xs"
-                          style={{ color: polishModel === m.id ? 'var(--color-accent)' : 'var(--color-text)' }}>
-                          {m.name || m.id}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <ModelSelector
+                providerId={polishProviderId}
+                model={polishModel}
+                onChange={(pid, mid) => {
+                  setPolishProviderId(pid)
+                  setPolishModel(mid)
+                  setChatProviderId(pid)
+                  setChatModel(mid)
+                }}
+                disabled={polishing}
+                minWidth={160}
+              />
               <div className="relative">
                 <button onClick={() => setShowPolishEffortDropdown(!showPolishEffortDropdown)}
                   className="flex items-center gap-1 px-2 py-1 rounded text-xs"
@@ -858,15 +879,15 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
               </div>
             </div>
 
-            <div className="mb-2">
+            <div className="mb-2 flex flex-col min-h-0" style={{ maxHeight: '50%' }}>
               <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>原文</label>
-              <div className="max-h-56 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }}>
+              <div className="flex-1 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap min-h-0" style={{ color: 'var(--color-text)', borderColor: 'var(--color-border)', backgroundColor: 'var(--color-sidebar)' }}>
                 {extractText}
               </div>
             </div>
 
             {!deAiMode && (
-            <div className="mb-3 relative">
+            <div className="mb-3 relative flex-shrink-0">
               <label className="mb-1 block text-xs" style={{ color: 'var(--color-text-muted)' }}>润色指令</label>
               <textarea value={polishInstruction} onChange={e => setPolishInstruction(e.target.value)}
                 onFocus={() => polishHistory.length > 0 && setShowPolishHistory(true)}
@@ -894,7 +915,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
             )}
 
             {polishResult && (
-              <div className="mb-3 flex-1">
+              <div className="mb-3 flex-1 flex flex-col min-h-0">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>润色结果</label>
                   <button onClick={handleAiPolish} disabled={polishing}
@@ -903,7 +924,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                     {polishing ? '重新生成中...' : '🔄 重新生成'}
                   </button>
                 </div>
-                <div className="max-h-48 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap" style={{ color: 'var(--color-text)', borderColor: 'var(--color-accent)', backgroundColor: 'var(--color-sidebar)' }}>
+                <div className="flex-1 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap min-h-0" style={{ color: 'var(--color-text)', borderColor: 'var(--color-accent)', backgroundColor: 'var(--color-sidebar)' }}>
                   {polishResult}
                 </div>
               </div>
