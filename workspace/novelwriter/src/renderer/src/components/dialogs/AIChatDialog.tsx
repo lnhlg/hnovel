@@ -1,11 +1,63 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown } from 'lucide-react'
+import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown, Copy } from 'lucide-react'
 import { useAppStore, type Character, type WorldSetting, type Location, type Timeline, type CharacterRelation, type Inspiration, type Reference } from '../../store/app'
 import ModelSelector from '../ModelSelector'
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+}
+
+// 解析消息中的 ```代码块```，渲染带复制按钮的代码框
+function FormattedContent({ content }: { content: string }): JSX.Element {
+  const parts = content.split(/(```[\s\S]*?```)/)
+  if (parts.length === 1) {
+    return <pre className="whitespace-pre-wrap m-0" style={{ fontFamily: 'inherit', fontSize: 'inherit' }}>{content}</pre>
+  }
+  return (
+    <>
+      {parts.map((part, idx) => {
+        if (!part.startsWith('```')) {
+          if (!part.trim()) return null
+          return (
+            <pre key={idx} className="whitespace-pre-wrap m-0" style={{ fontFamily: 'inherit', fontSize: 'inherit' }}>
+              {part}
+            </pre>
+          )
+        }
+        // 提取语言和代码内容
+        const match = part.match(/^```(\w*)\s*\n([\s\S]*?)\n?```$/)
+        const lang = match?.[1] || ''
+        const code = match?.[2] || part.slice(3, -3).trim()
+        return <CodeBlock key={idx} code={code} lang={lang} />
+      })}
+    </>
+  )
+}
+
+function CodeBlock({ code, lang }: { code: string; lang: string }): JSX.Element {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* ignore */ }
+  }
+  return (
+    <div className="my-2 rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+      <div className="flex items-center justify-between px-3 py-1 text-xs" style={{ backgroundColor: 'var(--color-hover)', color: 'var(--color-text-dim)' }}>
+        <span>{lang || 'code'}</span>
+        <button onClick={handleCopy} className="flex items-center gap-1 hover:opacity-70" style={{ color: 'var(--color-text-secondary)' }}>
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
+      <pre className="p-3 text-xs overflow-auto m-0 whitespace-pre-wrap break-all" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}>
+        {code}
+      </pre>
+    </div>
+  )
 }
 
 const ENTITY_CONFIG: Record<string, {
@@ -172,10 +224,10 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
         if (curChapter) {
           cp.push(`【目标章节】第${curChapter.sortOrder + 1}章「${curChapter.title}」`)
           if (curChapter.outline?.trim()) {
-            cp.push(`现有章纲：\n${curChapter.outline.trim().slice(0, 500)}`)
+            cp.push(`现有章纲：\n${curChapter.outline.trim()}`)
           }
           if (curChapter.content?.trim()) {
-            const cleanContent = stripHtmlAndFixPunct(curChapter.content).slice(0, 3000)
+            const cleanContent = stripHtmlAndFixPunct(curChapter.content)
             cp.push(`【目标章节正文】\n${cleanContent}`)
           }
         }
@@ -544,7 +596,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
       onClick={(e) => { if (e.target === e.currentTarget && !loading) onClose() }}
     >
       <div
-        className="rounded-xl shadow-2xl w-[600px] h-[500px] overflow-hidden flex flex-col"
+        className="rounded-xl shadow-2xl w-[90vw] h-[85vh] overflow-hidden flex flex-col"
         style={{
           backgroundColor: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
@@ -668,9 +720,9 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
                   border: msg.role === 'assistant' ? '1px solid var(--color-border-light)' : 'none',
                 }}
               >
-                <pre className="whitespace-pre-wrap m-0" style={{ fontFamily: 'inherit', fontSize: 'inherit' }}>
-                  {msg.content || (loading && i === messages.filter(m => m.role !== 'system').length - 1 ? '思考中...' : '')}
-                </pre>
+                {(msg.content || (loading && i === messages.filter(m => m.role !== 'system').length - 1))
+                  ? <FormattedContent content={msg.content || '思考中...'} />
+                  : ''}
               </div>
             </div>
           ))}

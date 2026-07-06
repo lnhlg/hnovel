@@ -98,6 +98,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const skills = useAppStore((s) => s.skills)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [generatingOutline, setGeneratingOutline] = useState(false)
   const [subTab, setSubTab] = useState<'outline' | 'content'>(doc.chapterSubTab || 'outline')
@@ -302,6 +303,19 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const close = () => setContextMenu(null)
     window.addEventListener('click', close)
     return () => window.removeEventListener('click', close)
+  }, [contextMenu])
+
+  // 右键菜单防溢出：超过视口边界时翻转
+  useEffect(() => {
+    if (!contextMenu || !menuRef.current) return
+    const menu = menuRef.current
+    const rect = menu.getBoundingClientRect()
+    if (rect.bottom > window.innerHeight) {
+      menu.style.top = `${window.innerHeight - rect.height - 4}px`
+    }
+    if (rect.right > window.innerWidth) {
+      menu.style.left = `${window.innerWidth - rect.width - 4}px`
+    }
   }, [contextMenu])
 
   const handleImport = async (target: 'outline' | 'content'): Promise<void> => {
@@ -648,6 +662,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       {/* 右键菜单 */}
       {contextMenu && (
         <div
+          ref={menuRef}
           className="fixed z-50 rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{
             left: contextMenu.x,
@@ -924,9 +939,10 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                     {polishing ? '重新生成中...' : '🔄 重新生成'}
                   </button>
                 </div>
-                <div className="flex-1 overflow-auto rounded border p-2 text-xs whitespace-pre-wrap min-h-0" style={{ color: 'var(--color-text)', borderColor: 'var(--color-accent)', backgroundColor: 'var(--color-sidebar)' }}>
-                  {polishResult}
-                </div>
+                <textarea value={polishResult} onChange={e => setPolishResult(e.target.value)}
+                  className="flex-1 w-full resize-none rounded border p-2 text-xs whitespace-pre-wrap min-h-0"
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-accent)', backgroundColor: 'var(--color-sidebar)' }}
+                />
               </div>
             )}
 
