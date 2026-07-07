@@ -86,7 +86,7 @@ const ENTITY_CONFIG: Record<string, {
   },
   chapterOutline: {
     label: '章纲',
-    systemPrompt: '你是一位专业的小说编辑与策划师，擅长帮用户构思章节大纲。请严格按照 specs/章纲格式规范.md 的完整模板输出。',
+    systemPrompt: '你是一位专业的小说编辑与策划师，擅长帮用户构思章节大纲。',
     fields: 'number（章节编号，阿拉伯数字）, title（章节标题）, time（故事内时间）, location（主要场景地点）, characters（出场人物列表）, pov（视角人物，仅一个）, goal（本章目标）, overview（本章剧情概述，2-4段）, plot（剧情流程，编号列表，至少5条）, conflict（冲突，含外部/内部/人际）, characterChange（人物变化，含角色和变化描述）, infoRelease（释放信息，编号列表）, foreshadow（埋下伏笔，编号列表）, mood（本章情绪基调）, highlight（看点/爽点/泪点，三项）, hook（章节结尾钩子）, prevChapter（承接上一章）, nextChapter（引出下一章）, focus（描写重点）, wordCount（预计字数，格式如"本章正文约8000-10000字"）, notes（备注，可选）',
     saveFieldMap: ['number', 'title', 'time', 'location', 'characters', 'pov', 'goal', 'overview', 'plot', 'conflict', 'characterChange', 'infoRelease', 'foreshadow', 'mood', 'highlight', 'hook', 'prevChapter', 'nextChapter', 'focus', 'wordCount', 'notes']
   }
@@ -95,6 +95,20 @@ const ENTITY_CONFIG: Record<string, {
 function buildSystemPrompt(entityType: string, existingList: string): string {
   const cfg = ENTITY_CONFIG[entityType]
   if (!cfg) return '你是一位小说创作助手。'
+
+  // 章纲对话模式：自然讨论，直到用户要求生成
+  if (entityType === 'chapterOutline') {
+    return `你是专业的小说编辑与策划师，帮助用户构思章节大纲。
+
+当前项目上下文：
+${existingList || '（暂无上下文）'}
+
+【规则】
+1. 用中文和用户正常对话，讨论章纲构思、剧情走向、冲突设计等。
+2. **不要在讨论过程中输出任何 JSON 或结构化数据**。
+3. 当用户以任何方式表达"可以了""生成吧""输出章纲""整理出来"等意图时，立即输出完整的结构化章纲 JSON 数组，用 \`\`\`json 代码块包裹。输出时严格包含以下字段：
+${cfg.fields}`
+  }
 
   return `你是一位小说创作助手，帮助用户通过对话创建和修改${cfg.label}。
 
@@ -345,18 +359,20 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     setLoading(true)
     streamContentRef.current = ''
 
-    // 发送给 API 时在用户消息末尾追加强制指令，确保 AI 输出 JSON
-    const apiMessages: ChatMessage[] = [
-      ...messages,
-      {
-        role: 'user',
-        content:
-          userContent +
-          '\n\n【强制要求】你的回答末尾必须输出一个 ```json 代码块，' +
-          '其中**必须包含 name 字段**（用于匹配现有条目），其他字段按需填写。' +
-          '如果没有这个代码块，你的回答将被视为无效。现在请开始回答。'
-      }
-    ]
+    // 章纲模式：纯自然语言，不追加任何 JSON 指令
+    const apiMessages: ChatMessage[] = entityType === 'chapterOutline'
+      ? [...messages, { role: 'user', content: userContent }]
+      : [
+          ...messages,
+          {
+            role: 'user',
+            content:
+              userContent +
+              '\n\n【强制要求】你的回答末尾必须输出一个 ```json 代码块，' +
+              '其中**必须包含 name 字段**（用于匹配现有条目），其他字段按需填写。' +
+              '如果没有这个代码块，你的回答将被视为无效。现在请开始回答。'
+          }
+        ]
 
     const chunkCleanup = window.api.onAiChunk?.((chunk: string) => {
       streamContentRef.current += chunk
@@ -386,28 +402,33 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
           }
           return updated
         })
-        let parsed = parseJsonBlocks(result)
-        // 如果 AI 回复中没有 JSON，自动追问让 AI 只输出 JSON
-        if (!parsed || parsed.length === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 300))
-          const followUpMessages: ChatMessage[] = [
-            ...apiMessages,
-            { role: 'assistant', content: result },
-            {
-              role: 'user',
-              content:
-                '请把刚才的修改数据用 JSON 数组放在 ```json 代码块中输出，不要其他文字。'
-            }
-          ]
-          const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort })
-          if (jsonResult) {
-            parsed = parseJsonBlocks(jsonResult)
+        // 章纲模式：检测 JSON，有则展示应用面板，但不自动追问
+        if (entityType === 'chapterOutline') {
+          const parsed = parseJsonBlocks(result)
+          if (parsed && parsed.length > 0) {
+            setPendingEntities(parsed)
           }
-        }
-        if (parsed && parsed.length > 0) {
-          setPendingEntities(parsed)
         } else {
-          // AI 仍然没有输出 JSON，保留 pendingEntities 为 null
+          let parsed = parseJsonBlocks(result)
+          if (!parsed || parsed.length === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 300))
+            const followUpMessages: ChatMessage[] = [
+              ...apiMessages,
+              { role: 'assistant', content: result },
+              {
+                role: 'user',
+                content:
+                  '请把刚才的修改数据用 JSON 数组放在 ```json 代码块中输出，不要其他文字。'
+              }
+            ]
+            const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort })
+            if (jsonResult) {
+              parsed = parseJsonBlocks(jsonResult)
+            }
+          }
+          if (parsed && parsed.length > 0) {
+            setPendingEntities(parsed)
+          }
         }
       }
     } catch (err) {

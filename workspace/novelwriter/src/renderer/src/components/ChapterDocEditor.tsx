@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Upload, Sparkles, UserPlus, MessageSquare, ChevronDown } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Upload, Sparkles, UserPlus, MessageSquare, ChevronDown, X } from 'lucide-react'
 import { useLayoutStore, type OpenDoc } from '../store/layout'
 import { useAppStore } from '../store/app'
 import ExtractCharactersDialog from './dialogs/ExtractCharactersDialog'
@@ -120,6 +120,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [polishEffort, setPolishEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium')
   const [showPolishEffortDropdown, setShowPolishEffortDropdown] = useState(false)
   const [polishHistory, setPolishHistory] = useState<string[]>([])
+  const polishUndoStack = useRef<string[]>([])
+  const polishRedoStack = useRef<string[]>([])
   const [showPolishHistory, setShowPolishHistory] = useState(false)
   const [deAiMode, setDeAiMode] = useState(false)
 
@@ -129,6 +131,19 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const raw = localStorage.getItem('novelwriter-polish-history')
       if (raw) setPolishHistory(JSON.parse(raw))
     } catch {}
+  }, [])
+
+  // 正文编辑器撤销/重做
+  const mainUndoStack = useRef<{ text: string; tab: 'outline' | 'content' }[]>([])
+  const mainRedoStack = useRef<{ text: string; tab: 'outline' | 'content' }[]>([])
+  const undoDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const saveUndoPoint = useCallback((text: string, tab: 'outline' | 'content'): void => {
+    const stack = mainUndoStack.current
+    if (stack.length > 0 && stack[stack.length - 1].text === text && stack[stack.length - 1].tab === tab) return
+    stack.push({ text, tab })
+    if (stack.length > 200) stack.shift()
+    mainRedoStack.current = []
   }, [])
 
   // Refs to hold section text (avoid cursor jump from re-parsing on every keystroke)
@@ -183,6 +198,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       }
       if (textareaRef.current) {
         textareaRef.current.value = subTab === 'outline' ? parsed.outline : parsed.content
+        // 初始内容作为第一个撤销点
+        saveUndoPoint(textareaRef.current.value, subTab)
       }
     }
     init()
@@ -236,6 +253,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const v = e.target.value
+    // 用户输入防抖保存撤销点
+    if (undoDebounceTimer.current) clearTimeout(undoDebounceTimer.current)
+    undoDebounceTimer.current = setTimeout(() => saveUndoPoint(v, subTab), 800)
     if (subTab === 'outline') {
       outlineRef.current = v
     } else {
@@ -320,6 +340,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
   const handleImport = async (target: 'outline' | 'content'): Promise<void> => {
     if (!window.api?.showOpenDialog) return
+    if (textareaRef.current) saveUndoPoint(textareaRef.current.value, subTab)
     try {
       const result = await window.api.showOpenDialog({
         title: target === 'outline' ? '导入章节大纲' : '导入章节正文',
@@ -380,6 +401,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }
     if (!currentProject) return
     if (generatingOutline) return
+    if (textareaRef.current) saveUndoPoint(textareaRef.current.value, subTab)
     setGeneratingOutline(true)
     try {
       const result = await aiGenerate({
@@ -479,6 +501,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const handleApplyPolish = (): void => {
     if (!polishResult || !textareaRef.current) return
     const ta = textareaRef.current
+    saveUndoPoint(ta.value, subTab)
     const scrollTop = ta.scrollTop
     const before = ta.value.substring(0, ta.selectionStart)
     const after = ta.value.substring(ta.selectionEnd)
@@ -530,6 +553,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       return
     }
 
+    if (textareaRef.current) saveUndoPoint(textareaRef.current.value, subTab)
     const prevChapters = chapters
       .filter((c) => c.sortOrder < chapter.sortOrder && c.id !== chapter.id)
       .map((c) => ({
@@ -610,7 +634,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         style={{ borderBottom: '1px solid var(--color-border-light)' }}
       >
         <button
-          onClick={() => { setSubTab('outline'); setDocChapterSubTab(doc.id, 'outline') }}
+          onClick={() => { if (textareaRef.current) saveUndoPoint(textareaRef.current.value, subTab); setSubTab('outline'); setDocChapterSubTab(doc.id, 'outline') }}
           className="px-3 py-1 text-xs rounded transition-colors"
           style={{
             color: subTab === 'outline' ? 'var(--color-accent)' : 'var(--color-text-muted)',
@@ -621,7 +645,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           大纲
         </button>
         <button
-          onClick={() => { setSubTab('content'); setDocChapterSubTab(doc.id, 'content') }}
+          onClick={() => { if (textareaRef.current) saveUndoPoint(textareaRef.current.value, subTab); setSubTab('content'); setDocChapterSubTab(doc.id, 'content') }}
           className="px-3 py-1 text-xs rounded transition-colors"
           style={{
             color: subTab === 'content' ? 'var(--color-accent)' : 'var(--color-text-muted)',
@@ -644,6 +668,34 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         defaultValue={activeText}
         onChange={handleTextareaChange}
         onContextMenu={handleContextMenu}
+        onKeyDown={e => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault()
+            const ta = textareaRef.current
+            if (!ta || mainUndoStack.current.length === 0) return
+            const cur = { text: ta.value, tab: subTab }
+            const prev = mainUndoStack.current.pop()!
+            mainRedoStack.current.push(cur)
+            ta.value = prev.text
+            if (prev.tab === 'outline') outlineRef.current = prev.text
+            else contentRef.current = prev.text
+            const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+            setDocContent(doc.id, full)
+          }
+          if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+            e.preventDefault()
+            const ta = textareaRef.current
+            if (!ta || mainRedoStack.current.length === 0) return
+            const cur = { text: ta.value, tab: subTab }
+            const next = mainRedoStack.current.pop()!
+            mainUndoStack.current.push(cur)
+            ta.value = next.text
+            if (next.tab === 'outline') outlineRef.current = next.text
+            else contentRef.current = next.text
+            const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+            setDocContent(doc.id, full)
+          }
+        }}
         className="flex-1 w-full resize-none border-none bg-transparent text-base leading-relaxed outline-none p-6"
         style={{
           color: 'var(--color-text)',
@@ -914,15 +966,24 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 <div className="absolute left-0 top-full mt-1 z-50 w-full rounded-lg shadow-lg overflow-hidden"
                   style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                   {polishHistory.slice(0, 8).map((h, i) => (
-                    <button key={i}
-                      onMouseDown={e => { e.preventDefault(); setPolishInstruction(h); setShowPolishHistory(false) }}
-                      className="w-full px-3 py-1.5 text-left text-xs truncate"
-                      style={{ color: 'var(--color-text)' }}
+                    <div key={i} className="flex items-center group"
                       onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                      title={h}>
-                      {h}
-                    </button>
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}>
+                      <button
+                        onMouseDown={e => { e.preventDefault(); setPolishInstruction(h); setShowPolishHistory(false) }}
+                        className="flex-1 px-3 py-1.5 text-left text-xs truncate"
+                        style={{ color: 'var(--color-text)' }}
+                        title={h}>
+                        {h}
+                      </button>
+                      <button
+                        onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setPolishHistory(prev => { const next = prev.filter((_, idx) => idx !== i); localStorage.setItem('novelwriter-polish-history', JSON.stringify(next)); return next }) }}
+                        className="opacity-0 group-hover:opacity-100 p-1 mr-1 rounded transition-opacity"
+                        style={{ color: 'var(--color-text-dim)' }}
+                        title="删除">
+                        <X size={10} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -939,7 +1000,29 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                     {polishing ? '重新生成中...' : '🔄 重新生成'}
                   </button>
                 </div>
-                <textarea value={polishResult} onChange={e => setPolishResult(e.target.value)}
+                <textarea value={polishResult}
+                  onChange={e => {
+                    polishUndoStack.current.push(polishResult)
+                    if (polishUndoStack.current.length > 100) polishUndoStack.current.shift()
+                    polishRedoStack.current = []
+                    setPolishResult(e.target.value)
+                  }}
+                  onKeyDown={e => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                      e.preventDefault()
+                      if (polishUndoStack.current.length > 0) {
+                        polishRedoStack.current.push(polishResult)
+                        setPolishResult(polishUndoStack.current.pop()!)
+                      }
+                    }
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                      e.preventDefault()
+                      if (polishRedoStack.current.length > 0) {
+                        polishUndoStack.current.push(polishResult)
+                        setPolishResult(polishRedoStack.current.pop()!)
+                      }
+                    }
+                  }}
                   className="flex-1 w-full resize-none rounded border p-2 text-xs whitespace-pre-wrap min-h-0"
                   style={{ color: 'var(--color-text)', borderColor: 'var(--color-accent)', backgroundColor: 'var(--color-sidebar)' }}
                 />
