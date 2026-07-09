@@ -125,11 +125,19 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [showPolishHistory, setShowPolishHistory] = useState(false)
   const [deAiMode, setDeAiMode] = useState(false)
 
-  // 加载润色指令历史
+  // 加载润色指令历史（滤掉与 skill 内容一致的项）
   useEffect(() => {
     try {
       const raw = localStorage.getItem('novelwriter-polish-history')
-      if (raw) setPolishHistory(JSON.parse(raw))
+      if (raw) {
+        const loaded: string[] = JSON.parse(raw)
+        const skillContents = new Set(skills.filter(s => s.category?.includes('去AI')).map(s => s.content))
+        const filtered = loaded.filter(x => !skillContents.has(x))
+        if (filtered.length !== loaded.length) {
+          localStorage.setItem('novelwriter-polish-history', JSON.stringify(filtered))
+        }
+        setPolishHistory(filtered)
+      }
     } catch {}
   }, [])
 
@@ -485,10 +493,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, providerId: polishProviderId || undefined, reasoningEffort: polishEffort })
       if (result) {
         setPolishResult(result.trim())
-        // 保存指令到历史
-        const h = [polishInstruction, ...polishHistory.filter(x => x !== polishInstruction)].slice(0, 10)
-        setPolishHistory(h)
-        localStorage.setItem('novelwriter-polish-history', JSON.stringify(h))
+        // 保存指令到历史（跳过与 skill 内容完全一致的，避免去AI味技能的全文反复写入）
+        const defaultContent = deAiMode && currentProject?.skillId
+          ? skills.find(s => s.id === currentProject.skillId)?.content || ''
+          : ''
+        if (polishInstruction !== defaultContent) {
+          const latest: string[] = JSON.parse(localStorage.getItem('novelwriter-polish-history') || '[]')
+          const h = [polishInstruction, ...latest.filter(x => x !== polishInstruction)].slice(0, 10)
+          setPolishHistory(h)
+          localStorage.setItem('novelwriter-polish-history', JSON.stringify(h))
+        }
       }
     } catch (err) {
       // 不使用 alert：alert 是同步阻塞弹窗，会窃取焦点导致 ModelSelector 搜索框无法 refocus
