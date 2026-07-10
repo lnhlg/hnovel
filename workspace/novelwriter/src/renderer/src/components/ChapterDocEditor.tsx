@@ -3,6 +3,7 @@ import { Upload, Sparkles, UserPlus, MessageSquare, ChevronDown, X } from 'lucid
 import { useLayoutStore, type OpenDoc } from '../store/layout'
 import { useAppStore } from '../store/app'
 import ExtractCharactersDialog from './dialogs/ExtractCharactersDialog'
+import ExtractMemoryDialog from './dialogs/ExtractMemoryDialog'
 import AIChatDialog from './dialogs/AIChatDialog'
 import AIGenerateDialog from './AIGenerateDialog'
 import ModelSelector from './ModelSelector'
@@ -96,6 +97,21 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const setChatProviderId = useAppStore((s) => s.setChatProviderId)
   const setChatReasoningEffort = useAppStore((s) => s.setChatReasoningEffort)
   const skills = useAppStore((s) => s.skills)
+  const characters = useAppStore((s) => s.characters)
+  const worldSettings = useAppStore((s) => s.worldSettings)
+  const timelines = useAppStore((s) => s.timelines)
+  const locations = useAppStore((s) => s.locations)
+  const characterRelations = useAppStore((s) => s.characterRelations)
+  const saveCharacter = useAppStore((s) => s.saveCharacter)
+  const deleteWorldSetting = useAppStore((s) => s.deleteWorldSetting)
+  const deleteTimeline = useAppStore((s) => s.deleteTimeline)
+  const deleteLocation = useAppStore((s) => s.deleteLocation)
+  const deleteCharacterRelation = useAppStore((s) => s.deleteCharacterRelation)
+  const loadCharacters = useAppStore((s) => s.loadCharacters)
+  const loadWorldSettings = useAppStore((s) => s.loadWorldSettings)
+  const loadTimelines = useAppStore((s) => s.loadTimelines)
+  const loadLocations = useAppStore((s) => s.loadLocations)
+  const loadCharacterRelations = useAppStore((s) => s.loadCharacterRelations)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -105,6 +121,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [title, setTitle] = useState(doc.title)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showExtract, setShowExtract] = useState(false)
+  const [showExtractMemory, setShowExtractMemory] = useState(false)
   const [extractText, setExtractText] = useState('')
   const [showAiChatOutline, setShowAiChatOutline] = useState(false)
   const [genContentDialog, setGenContentDialog] = useState(false)
@@ -323,6 +340,83 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const handleExtractCharacters = () => {
     setContextMenu(null)
     setShowExtract(true)
+  }
+
+  const handleExtractMemory = () => {
+    setContextMenu(null)
+    setShowExtractMemory(true)
+  }
+
+  const handleClearMemory = async () => {
+    setContextMenu(null)
+    if (!currentProject) return
+    const titleMarker = `（${doc.title}）`
+    const idMarker = `[ch:${doc.entityId}]`
+    if (!confirm(`确定要清除「${doc.title}」提取的所有记忆数据吗？`)) return
+
+    try {
+      await loadCharacters(currentProject.id)
+      await loadWorldSettings(currentProject.id)
+      await loadTimelines(currentProject.id)
+      await loadLocations(currentProject.id)
+      await loadCharacterRelations(currentProject.id)
+
+      const s = useAppStore.getState()
+
+      const matchesMarker = (str: string) => str.includes(idMarker) || str.includes(titleMarker)
+      const extCats = new Set(['物品', '组织', '人物-物品关系', '人物-组织关系', '重要对话'])
+
+      const toUpdateChars = s.characters
+        .filter(c => c.importantEvents && matchesMarker(c.importantEvents))
+        .map(c => ({ id: c.id, events: c.importantEvents! }))
+
+      const toDeleteWS = s.worldSettings
+        .filter(ws => extCats.has(ws.category) && (!ws.description || matchesMarker(ws.description)))
+
+      const toDeleteTL = s.timelines
+        .filter(tl => tl.description && matchesMarker(tl.description))
+
+      const toDeleteLoc = s.locations
+        .filter(loc => loc.description && matchesMarker(loc.description))
+
+      const toDeleteCR = s.characterRelations
+        .filter(cr => cr.description && matchesMarker(cr.description))
+
+      if (toUpdateChars.length + toDeleteWS.length + toDeleteTL.length + toDeleteLoc.length + toDeleteCR.length === 0) {
+        if (!confirm(`没有找到标记为「${doc.title}」的记忆数据。\n\n可能原因：这些数据是用旧版本提取的，没有章节标记。\n是否删除所有来自记忆提取的数据（物品/组织/关系记录，共 ${s.worldSettings.filter(ws => extCats.has(ws.category)).length} 条）？\n\n注意：角色、地点、事件、人物关系不会被删除（这些可能有手动创建的数据）。`)) return
+        for (const ws of s.worldSettings.filter(ws => extCats.has(ws.category))) {
+          await deleteWorldSetting(ws.id)
+        }
+        for (const c of s.characters.filter(c => c.importantEvents?.trim())) {
+          await saveCharacter({ id: c.id, projectId: currentProject.id, importantEvents: '' })
+        }
+        await loadWorldSettings(currentProject.id)
+        await loadCharacters(currentProject.id)
+        useLayoutStore.getState().refreshMemoryGraph()
+        alert('已清除旧版本提取的记忆数据。建议重新「提炼记忆」以使用新的章节标记功能。')
+        return
+      }
+
+      for (const c of toUpdateChars) {
+        const remaining = c.events.split('\n').filter(line => !matchesMarker(line)).join('\n')
+        await saveCharacter({ id: c.id, projectId: currentProject.id, importantEvents: remaining })
+      }
+      for (const ws of toDeleteWS) await deleteWorldSetting(ws.id)
+      for (const tl of toDeleteTL) await deleteTimeline(tl.id)
+      for (const loc of toDeleteLoc) await deleteLocation(loc.id)
+      for (const cr of toDeleteCR) await deleteCharacterRelation(cr.id)
+
+      await loadCharacters(currentProject.id)
+      await loadWorldSettings(currentProject.id)
+      await loadTimelines(currentProject.id)
+      await loadLocations(currentProject.id)
+      await loadCharacterRelations(currentProject.id)
+      useLayoutStore.getState().refreshMemoryGraph()
+
+      alert(`已清除 ${toUpdateChars.length + toDeleteWS.length + toDeleteTL.length + toDeleteLoc.length + toDeleteCR.length} 条记忆数据`)
+    } catch (err) {
+      alert('清除失败：' + (err instanceof Error ? err.message : String(err)))
+    }
   }
 
   // 点击外部关闭右键菜单
@@ -830,6 +924,26 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
             style={{ color: 'var(--color-text)' }}
             onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            onClick={() => { setContextMenu(null); handleExtractMemory() }}
+          >
+            <Sparkles size={12} />
+            提炼记忆
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors"
+            style={{ color: 'var(--color-danger)' }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+            onClick={handleClearMemory}
+          >
+            <X size={12} />
+            清除本章记忆
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors"
+            style={{ color: 'var(--color-text)' }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
             onClick={() => { setContextMenu(null); handleExtractCharacters() }}
           >
             <UserPlus size={12} />
@@ -846,6 +960,18 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           sourceText={extractText}
           chapterContents={[]}
           projectId={currentProject.id}
+        />
+      )}
+
+      {/* 提炼记忆对话框 */}
+      {currentProject && (
+        <ExtractMemoryDialog
+          open={showExtractMemory}
+          onClose={() => setShowExtractMemory(false)}
+          sourceText={extractText}
+          projectId={currentProject.id}
+          chapterTitle={title}
+          chapterId={doc.entityId}
         />
       )}
 

@@ -99,6 +99,11 @@ const api = {
   saveLocation: (data: unknown) => ipcRenderer.invoke('location:save', data),
   deleteLocation: (id: string) => ipcRenderer.invoke('location:delete', id),
 
+  // 物品
+  getItems: (projectId: string) => ipcRenderer.invoke('item:list', projectId),
+  saveItem: (data: unknown) => ipcRenderer.invoke('item:save', data),
+  deleteItem: (id: string) => ipcRenderer.invoke('item:delete', id),
+
   // 角色关系
   getCharacterRelations: (projectId: string) => ipcRenderer.invoke('characterRelation:list', projectId),
   saveCharacterRelation: (data: unknown) => ipcRenderer.invoke('characterRelation:save', data),

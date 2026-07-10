@@ -3,7 +3,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
+  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
   loadProjects, saveProject, deleteProject, loadProjectById,
   loadStoryProgress, saveStoryProgress,
   loadChapters, saveChapter, deleteChapter,
@@ -11,6 +11,7 @@ import {
   loadWorldSettings, saveWorldSetting, deleteWorldSetting,
   loadTimelines, saveTimeline, deleteTimeline,
   loadLocations, saveLocation, deleteLocation,
+  loadItems, saveItem, deleteItem,
   loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
   loadCharacterPositions, saveCharacterPositions,
   loadInspirations, saveInspiration, deleteInspiration,
@@ -1860,6 +1861,7 @@ export function registerTimelineHandlers(): void {
         description: data.description ?? existing.description,
         date: data.date ?? existing.date,
         sortOrder: data.sortOrder ?? existing.sortOrder,
+        chapterId: data.chapterId ?? existing.chapterId,
         updatedAt: time
       }
       saveTimeline(data.projectId, timeline)
@@ -1882,6 +1884,7 @@ export function registerTimelineHandlers(): void {
         description: data.description ?? '',
         date: data.date ?? '',
         sortOrder,
+        chapterId: data.chapterId ?? '',
         createdAt: time,
         updatedAt: time
       }
@@ -1979,6 +1982,63 @@ export function registerLocationHandlers(): void {
           deleteLocationMD(project.path, location.name)
           saveLocationsMD(project.path, loadLocations(project.id))
         }
+        break
+      }
+    }
+    return { success: true }
+  })
+}
+
+export function registerItemHandlers(): void {
+  ipcMain.handle('item:list', (_event, projectId: string) => {
+    return loadItems(projectId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  })
+
+  ipcMain.handle('item:save', (_event, data: Partial<Item> & { projectId: string }) => {
+    const time = now()
+    const existing = data.id ? loadItems(data.projectId).find(i => i.id === data.id) : null
+
+    if (existing) {
+      const item: Item = {
+        ...existing,
+        name: data.name ?? existing.name,
+        description: data.description ?? existing.description,
+        status: data.status ?? existing.status,
+        owner: data.owner ?? existing.owner,
+        chapterId: data.chapterId ?? existing.chapterId,
+        appearance: data.appearance ?? existing.appearance,
+        size: data.size ?? existing.size,
+        pattern: data.pattern ?? existing.pattern,
+        updatedAt: time
+      }
+      saveItem(data.projectId, item)
+      return item
+    } else {
+      const id = data.id || randomUUID()
+      const item: Item = {
+        id, projectId: data.projectId,
+        name: data.name ?? '',
+        description: data.description ?? '',
+        status: data.status ?? '',
+        owner: data.owner ?? '',
+        chapterId: data.chapterId ?? '',
+        appearance: data.appearance ?? '',
+        size: data.size ?? '',
+        pattern: data.pattern ?? '',
+        createdAt: time, updatedAt: time
+      }
+      saveItem(data.projectId, item)
+      return item
+    }
+  })
+
+  ipcMain.handle('item:delete', (_event, id: string) => {
+    const allProjects = loadProjects()
+    for (const project of allProjects) {
+      const items = loadItems(project.id)
+      const item = items.find(i => i.id === id)
+      if (item) {
+        deleteItem(project.id, id)
         break
       }
     }

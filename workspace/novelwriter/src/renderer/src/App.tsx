@@ -24,6 +24,7 @@ import DocTabs from './components/DocTabs'
 import MarkdownDocEditor from './components/MarkdownDocEditor'
 import ChapterDocEditor from './components/ChapterDocEditor'
 import CharacterRelationGraph from './components/CharacterRelationGraph'
+import MemoryGraph from './components/MemoryGraph'
 import type { OpenDoc } from './store/layout'
 
 // 从正文内容开头解析章节标题，如 "第1章 惊变" / "第一章 惊变" / "Chapter 1 惊变"
@@ -70,13 +71,19 @@ function App(): JSX.Element {
     loadWritingLogs,
     loadReferences,
     characters,
-    characterRelations
+    characterRelations,
+    worldSettings,
+    timelines,
+    locations,
+    chapters,
+    items
   } = useAppStore()
 
   const { showSettings, setShowSettings, loadConfig } = useAISettingsStore()
   const sidebarView = useLayoutStore((s) => s.sidebarView)
   const openDocs = useLayoutStore((s) => s.openDocs)
   const activeDocId = useLayoutStore((s) => s.activeDocId)
+  const memoryRefreshKey = useLayoutStore((s) => s.memoryRefreshKey)
   const setDocDirty = useLayoutStore((s) => s.setDocDirty)
   const setDocTitle = useLayoutStore((s) => s.setDocTitle)
   const setDocContent = useLayoutStore((s) => s.setDocContent)
@@ -227,7 +234,27 @@ function App(): JSX.Element {
               {/* 编辑器内容区 */}
               <div className="flex-1 overflow-auto">
                 {activeDoc ? (
-                  activeDoc.type === 'characterRelations' ? (
+                  activeDoc.type === 'memoryGraph' ? (
+                    <div className="w-full h-full p-4">
+                      <MemoryGraph key={memoryRefreshKey}
+                        characters={characters}
+                        items={items}
+                        worldSettings={worldSettings}
+                        characterRelations={characterRelations}
+                        locations={locations}
+                        timelines={timelines}
+                        chapters={chapters}
+                        width={900}
+                        height={600}
+                        onNodeClick={(type, id) => {
+                          if (type === 'character') {
+                            const char = characters.find(c => c.id === id.replace('char:', ''))
+                            if (char) handleOpenCharacterDoc(char.id)
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : activeDoc.type === 'characterRelations' ? (
                     <div className="w-full h-full p-4">
                       <CharacterRelationGraph
                         projectId={currentProject!.id}

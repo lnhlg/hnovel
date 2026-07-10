@@ -88,6 +88,21 @@ export interface Timeline {
   updatedAt: string
 }
 
+export interface Item {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  status: string
+  owner: string
+  chapterId: string
+  appearance: string
+  size: string
+  pattern: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Location {
   id: string
   projectId: string
@@ -172,6 +187,8 @@ interface AppState {
   worldSettings: WorldSetting[]
   // 时间线
   timelines: Timeline[]
+  // 物品
+  items: Item[]
   // 地点场景
   locations: Location[]
   // 角色关系
@@ -235,6 +252,10 @@ interface AppState {
   loadTimelines: (projectId: string) => Promise<void>
   saveTimeline: (data: Partial<Timeline> & { projectId: string }) => Promise<void>
   deleteTimeline: (id: string) => Promise<void>
+  // 物品操作
+  loadItems: (projectId: string) => Promise<void>
+  saveItem: (data: Partial<Item> & { projectId: string }) => Promise<void>
+  deleteItem: (id: string) => Promise<void>
   // 地点场景操作
   loadLocations: (projectId: string) => Promise<void>
   saveLocation: (data: Partial<Location> & { projectId: string }) => Promise<void>
@@ -283,6 +304,7 @@ export const useAppStore = create<AppState>()(
   worldSettings: [],
   timelines: [],
   locations: [],
+  items: [],
   characterRelations: [],
   inspirations: [],
   writingLogs: [],
@@ -355,6 +377,7 @@ export const useAppStore = create<AppState>()(
       worldSettings: isCurrent ? [] : get().worldSettings,
       timelines: isCurrent ? [] : get().timelines,
       locations: isCurrent ? [] : get().locations,
+      items: isCurrent ? [] : get().items,
       characterRelations: isCurrent ? [] : get().characterRelations,
       inspirations: isCurrent ? [] : get().inspirations,
       writingLogs: isCurrent ? [] : get().writingLogs,
@@ -513,6 +536,32 @@ export const useAppStore = create<AppState>()(
     await window.api.deleteLocation(id)
     const { locations } = get()
     set({ locations: locations.filter((l) => l.id !== id) })
+  },
+
+  // 物品操作
+  loadItems: async (projectId) => {
+    const items = await window.api.getItems(projectId)
+    set({ items })
+  },
+
+  saveItem: async (data) => {
+    const saved = await window.api.saveItem(data)
+    if (!saved) throw new Error('保存物品失败：后端返回空')
+    const { items } = get()
+    const existingIdx = items.findIndex((i) => i.id === saved.id)
+    if (existingIdx >= 0) {
+      const updated = [...items]
+      updated[existingIdx] = saved
+      set({ items: updated })
+    } else {
+      set({ items: [...items, saved] })
+    }
+  },
+
+  deleteItem: async (id) => {
+    await window.api.deleteItem(id)
+    const { items } = get()
+    set({ items: items.filter((i) => i.id !== id) })
   },
 
   // 角色关系操作

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type SidebarView = 'project' | 'characters' | 'outline' | 'world' | 'timeline' | 'locations' | 'relations' | 'inspirations' | 'logs' | 'references' | 'writingStyles' | 'skills'
 
-export type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs' | 'writingStyles' | 'skills'
+export type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs' | 'writingStyles' | 'skills' | 'memoryGraph'
 
 export interface OpenDoc {
   id: string
@@ -28,6 +28,8 @@ interface LayoutState {
   setDocTitle: (id: string, title: string) => void
   setDocChapterSubTab: (id: string, subTab: 'outline' | 'content') => void
   closeAllDocs: () => void
+  memoryRefreshKey: number
+  refreshMemoryGraph: () => void
 }
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
@@ -103,5 +105,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
     }))
   },
 
-  closeAllDocs: () => set({ openDocs: [], activeDocId: null })
+  closeAllDocs: () => set({ openDocs: [], activeDocId: null }),
+  memoryRefreshKey: 0,
+  refreshMemoryGraph: () => set((state) => ({ memoryRefreshKey: state.memoryRefreshKey + 1 }))
 }))

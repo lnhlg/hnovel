@@ -42,6 +42,7 @@ export default function Sidebar(): JSX.Element {
     loadReferences,
     loadWritingStyles,
     loadSkills,
+    loadItems,
     createChapter,
     deleteProject,
     deleteChapter
@@ -101,6 +102,7 @@ export default function Sidebar(): JSX.Element {
     await loadWorldSettings(project.id)
     await loadTimelines(project.id)
     await loadLocations(project.id)
+    await loadItems(project.id)
     await loadCharacterRelations(project.id)
     await loadInspirations(project.id)
     await loadWritingLogs(project.id)
@@ -470,6 +472,18 @@ export default function Sidebar(): JSX.Element {
                       <Link2 size={12} />
                       <span className="flex-1">角色关系</span>
                       <span className="text-xs" style={{ color: 'var(--color-text-dim)' }}>{characterRelations.length}</span>
+                    </div>
+
+                    {/* 记忆图谱 */}
+                    <div
+                      onClick={() => openDocTab('memoryGraph', 'memoryGraph', '记忆图谱')}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs cursor-pointer rounded-sm transition-colors"
+                      style={{ color: 'var(--color-text-secondary)' }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      <Globe size={12} />
+                      <span className="flex-1">记忆图谱</span>
                     </div>
                   </div>
                 )}

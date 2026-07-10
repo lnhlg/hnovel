@@ -93,6 +93,7 @@ export interface Timeline {
   description: string
   date: string
   sortOrder: number
+  chapterId: string
   createdAt: string
   updatedAt: string
 }
@@ -103,6 +104,21 @@ export interface Location {
   name: string
   description: string
   type: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Item {
+  id: string
+  projectId: string
+  name: string
+  description: string
+  status: string
+  owner: string
+  chapterId: string
+  appearance: string
+  size: string
+  pattern: string
   createdAt: string
   updatedAt: string
 }
@@ -389,6 +405,18 @@ export function saveLocation(projectId: string, location: Location): Location {
 
 export function deleteLocation(projectId: string, id: string): void {
   storeFor<Location>(projectId, 'locations.json').delete(id)
+}
+
+export function loadItems(projectId: string): Item[] {
+  return storeFor<Item>(projectId, 'items.json').load()
+}
+
+export function saveItem(projectId: string, item: Item): Item {
+  return storeFor<Item>(projectId, 'items.json').upsert(item)
+}
+
+export function deleteItem(projectId: string, id: string): void {
+  storeFor<Item>(projectId, 'items.json').delete(id)
 }
 
 export function loadCharacterRelations(projectId: string): CharacterRelation[] {
