@@ -43,6 +43,7 @@ export default function Sidebar(): JSX.Element {
     loadWritingStyles,
     loadSkills,
     loadItems,
+    loadDialogues,
     createChapter,
     deleteProject,
     deleteChapter
@@ -103,6 +104,7 @@ export default function Sidebar(): JSX.Element {
     await loadTimelines(project.id)
     await loadLocations(project.id)
     await loadItems(project.id)
+    await loadDialogues(project.id)
     await loadCharacterRelations(project.id)
     await loadInspirations(project.id)
     await loadWritingLogs(project.id)

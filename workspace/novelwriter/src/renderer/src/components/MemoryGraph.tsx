@@ -41,6 +41,7 @@ const chIdSort = (chapters: { id: string; sortOrder: number }[]) => {
 interface MemoryGraphProps {
   characters: { id: string; name: string; role?: string; description?: string; importantEvents?: string }[]
   items?: { id: string; name: string; description: string; status: string; owner: string; chapterId: string; appearance: string; size: string; pattern: string }[]
+  dialogues?: { id: string; speaker: string; with: string; content: string; context: string; chapterId: string; seq: number }[]
   worldSettings: { id: string; key: string; category: string; value: string; description?: string }[]
   characterRelations?: { id: string; characterId1: string; characterId2: string; relation: string; description?: string }[]
   locations?: { id: string; name: string; type?: string; description?: string }[]
@@ -163,7 +164,7 @@ const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
 ]
 
 export default function MemoryGraph({
-  characters, items, worldSettings, characterRelations, locations, timelines, chapters,
+  characters, items, dialogues, worldSettings, characterRelations, locations, timelines, chapters,
   width = 900, height = 600,
   onNodeClick
 }: MemoryGraphProps): JSX.Element {
@@ -297,6 +298,7 @@ export default function MemoryGraph({
     worldSettings.forEach(ws => { const m = ws.description?.match(/\[ch:([^\]]+)\]/); if (m) check(m[1]) })
     characterRelations?.forEach(cr => { const m = cr.description?.match(/\[ch:([^\]]+)\]/); if (m) check(m[1]) })
     items?.forEach(it => check(it.chapterId))
+    dialogues?.forEach(d => check(d.chapterId))
     timelines?.forEach(tl => { const m = tl.description?.match(/\[ch:([^\]]+)\]/); if (m) check(m[1]) })
     if (max > 0) setSelectedChOrder(max)
   }, [chOrderMap])
@@ -679,8 +681,13 @@ export default function MemoryGraph({
     return sa - sb
   }
   const extractedDialogues = useMemo(() =>
-    worldSettings.filter(ws => ws.category === '重要对话').sort(chSort),
-    [worldSettings, chOrderMap]
+    (dialogues || []).sort((a, b) => {
+      const oa = chOrderMap.get(a.chapterId) ?? 999
+      const ob = chOrderMap.get(b.chapterId) ?? 999
+      if (oa !== ob) return oa - ob
+      return a.seq - b.seq
+    }),
+    [dialogues, chOrderMap]
   )
   const extractedLocs = useMemo(() =>
     (locations || []).sort(chSort),
@@ -1095,11 +1102,9 @@ export default function MemoryGraph({
 
       {activeTab === 'dialogues' && (() => {
         const cols = [{ key: 'speaker', label: '说话者' }, { key: 'content', label: '对话内容' }, { key: 'with', label: '对话对象' }, { key: 'context', label: '场景' }]
-        const rows = extractedDialogues.map(d => {
-          const [speaker, withRaw] = (d.key || '').split('→').map(s => s.trim())
-          const with_ = (withRaw || '').replace(/@.*$/, '')
-          return { id: d.id, speaker: speaker || '-', content: d.value?.slice(0, 100) + (d.value && d.value.length > 100 ? '...' : '') || '-', with: with_ || '-', context: (d.description || '').replace(/\[ch:.*?\]|（[^）]*）/g, '').trim() || '-' }
-        })
+        const rows = extractedDialogues.map(d => ({
+          id: d.id, speaker: d.speaker || '-', content: d.content?.slice(0, 100) + (d.content && d.content.length > 100 ? '...' : '') || '-', with: d.with || '-', context: d.context || '-'
+        }))
         return (
           <div style={{ padding: 12, overflow: 'auto', height: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
@@ -1128,9 +1133,9 @@ export default function MemoryGraph({
                       <td style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)' }}>
                         <button onClick={async () => {
                           if (!confirm(`确定删除这条对话？`)) return
-                          await useAppStore.getState().deleteWorldSetting(row.id)
+                          await useAppStore.getState().deleteDialogue(row.id)
                           const pid = useAppStore.getState().currentProject?.id
-                          if (pid) await useAppStore.getState().loadWorldSettings(pid)
+                          if (pid) await useAppStore.getState().loadDialogues(pid)
                         }}
                           style={{ padding: '2px', borderRadius: 3, border: 'none', backgroundColor: 'transparent', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 10 }}>
                           <Trash2 size={11} />
@@ -1222,9 +1227,7 @@ export default function MemoryGraph({
         const relEdges = allEdges.filter(e =>
           (e.sourceId === popupNode.node.id || e.targetId === popupNode.node.id)
         )
-        const charDialogues = worldSettings.filter(ws =>
-          ws.category === '重要对话' && ws.key.startsWith(char.name + '→')
-        )
+        const charDialogues = (dialogues || []).filter(d => d.speaker === char.name)
         const connectedLabels = relEdges.map(e => {
           const otherId = e.sourceId === popupNode.node.id ? e.targetId : e.sourceId
           const other = nodes.find(n => n.id === otherId)
@@ -1264,7 +1267,7 @@ export default function MemoryGraph({
                 <span style={{ color: 'var(--color-text-muted)' }}>重要对话：</span>
                 {charDialogues.slice(0, 3).map((d, i) => (
                   <div key={i} style={{ color: 'var(--color-text-dim)', paddingLeft: 8, lineHeight: 1.5, fontSize: 10 }}>
-                    · "{d.value?.slice(0, 50)}{d.value && d.value.length > 50 ? '...' : ''}"
+                    · "{d.content?.slice(0, 50)}{d.content && d.content.length > 50 ? '...' : ''}"
                   </div>
                 ))}
                 {charDialogues.length > 3 && (

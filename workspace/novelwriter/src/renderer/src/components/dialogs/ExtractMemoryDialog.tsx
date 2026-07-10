@@ -156,8 +156,10 @@ export default function ExtractMemoryDialog({ open, onClose, sourceText, project
   const saveTimeline = useAppStore((s) => s.saveTimeline)
   const saveCharacterRelation = useAppStore((s) => s.saveCharacterRelation)
   const saveItem = useAppStore((s) => s.saveItem)
+  const saveDialogue = useAppStore((s) => s.saveDialogue)
   const loadCharacters = useAppStore((s) => s.loadCharacters)
   const loadItems = useAppStore((s) => s.loadItems)
+  const loadDialogues = useAppStore((s) => s.loadDialogues)
   const loadLocations = useAppStore((s) => s.loadLocations)
   const loadWorldSettings = useAppStore((s) => s.loadWorldSettings)
   const loadTimelines = useAppStore((s) => s.loadTimelines)
@@ -441,15 +443,14 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
       for (const idx of checked.dialogues || []) {
         const d = data.dialogues[idx]
         if (!d) continue
-        const suffix = chapterId ? `@${chapterId}` : ''
-        const key = `${d.speaker.trim()}→${(d.with || '未知').trim()}${suffix}`
-        await saveWorldSetting({ projectId, category: '重要对话', key, value: d.content || '', description: `${d.context || ''}${ctx}[seq:${seq}]` })
+        await saveDialogue({ projectId, speaker: d.speaker.trim(), with: (d.with || '未知').trim(), content: d.content || '', context: d.context || '', chapterId: chapterId || '', seq })
         seq++
       }
 
       await loadCharacters(projectId)
       await loadLocations(projectId)
       await loadItems(projectId)
+      await loadDialogues(projectId)
       await loadWorldSettings(projectId)
       await loadTimelines(projectId)
       await loadCharacterRelations(projectId)

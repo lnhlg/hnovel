@@ -76,7 +76,8 @@ function App(): JSX.Element {
     timelines,
     locations,
     chapters,
-    items
+    items,
+    dialogues
   } = useAppStore()
 
   const { showSettings, setShowSettings, loadConfig } = useAISettingsStore()
@@ -239,6 +240,7 @@ function App(): JSX.Element {
                       <MemoryGraph key={memoryRefreshKey}
                         characters={characters}
                         items={items}
+                        dialogues={dialogues}
                         worldSettings={worldSettings}
                         characterRelations={characterRelations}
                         locations={locations}

@@ -123,6 +123,19 @@ export interface Item {
   updatedAt: string
 }
 
+export interface Dialogue {
+  id: string
+  projectId: string
+  speaker: string
+  with: string
+  content: string
+  context: string
+  chapterId: string
+  seq: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface CharacterRelation {
   id: string
   projectId: string
@@ -417,6 +430,18 @@ export function saveItem(projectId: string, item: Item): Item {
 
 export function deleteItem(projectId: string, id: string): void {
   storeFor<Item>(projectId, 'items.json').delete(id)
+}
+
+export function loadDialogues(projectId: string): Dialogue[] {
+  return storeFor<Dialogue>(projectId, 'dialogues.json').load()
+}
+
+export function saveDialogue(projectId: string, dialogue: Dialogue): Dialogue {
+  return storeFor<Dialogue>(projectId, 'dialogues.json').upsert(dialogue)
+}
+
+export function deleteDialogue(projectId: string, id: string): void {
+  storeFor<Dialogue>(projectId, 'dialogues.json').delete(id)
 }
 
 export function loadCharacterRelations(projectId: string): CharacterRelation[] {

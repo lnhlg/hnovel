@@ -102,12 +102,15 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const timelines = useAppStore((s) => s.timelines)
   const locations = useAppStore((s) => s.locations)
   const characterRelations = useAppStore((s) => s.characterRelations)
+  const dialogues = useAppStore((s) => s.dialogues)
   const saveCharacter = useAppStore((s) => s.saveCharacter)
   const deleteWorldSetting = useAppStore((s) => s.deleteWorldSetting)
   const deleteTimeline = useAppStore((s) => s.deleteTimeline)
   const deleteLocation = useAppStore((s) => s.deleteLocation)
   const deleteCharacterRelation = useAppStore((s) => s.deleteCharacterRelation)
+  const deleteDialogue = useAppStore((s) => s.deleteDialogue)
   const loadCharacters = useAppStore((s) => s.loadCharacters)
+  const loadDialogues = useAppStore((s) => s.loadDialogues)
   const loadWorldSettings = useAppStore((s) => s.loadWorldSettings)
   const loadTimelines = useAppStore((s) => s.loadTimelines)
   const loadLocations = useAppStore((s) => s.loadLocations)
@@ -364,7 +367,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const s = useAppStore.getState()
 
       const matchesMarker = (str: string) => str.includes(idMarker) || str.includes(titleMarker)
-      const extCats = new Set(['物品', '组织', '人物-物品关系', '人物-组织关系', '重要对话'])
+      const extCats = new Set(['物品', '组织', '人物-物品关系', '人物-组织关系'])
 
       const toUpdateChars = s.characters
         .filter(c => c.importantEvents && matchesMarker(c.importantEvents))
@@ -381,6 +384,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
       const toDeleteCR = s.characterRelations
         .filter(cr => cr.description && matchesMarker(cr.description))
+
+      const toDeleteDialogues = dialogues
+        .filter(d => matchesMarker(`[ch:${d.chapterId}]`))
 
       if (toUpdateChars.length + toDeleteWS.length + toDeleteTL.length + toDeleteLoc.length + toDeleteCR.length === 0) {
         if (!confirm(`没有找到标记为「${doc.title}」的记忆数据。\n\n可能原因：这些数据是用旧版本提取的，没有章节标记。\n是否删除所有来自记忆提取的数据（物品/组织/关系记录，共 ${s.worldSettings.filter(ws => extCats.has(ws.category)).length} 条）？\n\n注意：角色、地点、事件、人物关系不会被删除（这些可能有手动创建的数据）。`)) return
@@ -405,15 +411,17 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       for (const tl of toDeleteTL) await deleteTimeline(tl.id)
       for (const loc of toDeleteLoc) await deleteLocation(loc.id)
       for (const cr of toDeleteCR) await deleteCharacterRelation(cr.id)
+      for (const d of toDeleteDialogues) await deleteDialogue(d.id)
 
       await loadCharacters(currentProject.id)
       await loadWorldSettings(currentProject.id)
       await loadTimelines(currentProject.id)
       await loadLocations(currentProject.id)
       await loadCharacterRelations(currentProject.id)
+      await loadDialogues(currentProject.id)
       useLayoutStore.getState().refreshMemoryGraph()
 
-      alert(`已清除 ${toUpdateChars.length + toDeleteWS.length + toDeleteTL.length + toDeleteLoc.length + toDeleteCR.length} 条记忆数据`)
+      alert(`已清除 ${toUpdateChars.length + toDeleteWS.length + toDeleteTL.length + toDeleteLoc.length + toDeleteCR.length + toDeleteDialogues.length} 条记忆数据`)
     } catch (err) {
       alert('清除失败：' + (err instanceof Error ? err.message : String(err)))
     }

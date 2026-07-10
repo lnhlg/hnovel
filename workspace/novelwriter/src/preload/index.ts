@@ -104,6 +104,11 @@ const api = {
   saveItem: (data: unknown) => ipcRenderer.invoke('item:save', data),
   deleteItem: (id: string) => ipcRenderer.invoke('item:delete', id),
 
+  // 对话
+  getDialogues: (projectId: string) => ipcRenderer.invoke('dialogue:list', projectId),
+  saveDialogue: (data: unknown) => ipcRenderer.invoke('dialogue:save', data),
+  deleteDialogue: (id: string) => ipcRenderer.invoke('dialogue:delete', id),
+
   // 角色关系
   getCharacterRelations: (projectId: string) => ipcRenderer.invoke('characterRelation:list', projectId),
   saveCharacterRelation: (data: unknown) => ipcRenderer.invoke('characterRelation:save', data),

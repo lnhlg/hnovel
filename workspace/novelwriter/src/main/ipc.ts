@@ -3,7 +3,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
+  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
   loadProjects, saveProject, deleteProject, loadProjectById,
   loadStoryProgress, saveStoryProgress,
   loadChapters, saveChapter, deleteChapter,
@@ -12,6 +12,7 @@ import {
   loadTimelines, saveTimeline, deleteTimeline,
   loadLocations, saveLocation, deleteLocation,
   loadItems, saveItem, deleteItem,
+  loadDialogues, saveDialogue, deleteDialogue,
   loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
   loadCharacterPositions, saveCharacterPositions,
   loadInspirations, saveInspiration, deleteInspiration,
@@ -2039,6 +2040,38 @@ export function registerItemHandlers(): void {
       const item = items.find(i => i.id === id)
       if (item) {
         deleteItem(project.id, id)
+        break
+      }
+    }
+    return { success: true }
+  })
+}
+
+export function registerDialogueHandlers(): void {
+  ipcMain.handle('dialogue:list', (_event, projectId: string) => {
+    return loadDialogues(projectId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  })
+
+  ipcMain.handle('dialogue:save', (_event, data: Partial<Dialogue> & { projectId: string }) => {
+    const time = now()
+    const existing = data.id ? loadDialogues(data.projectId).find(d => d.id === data.id) : null
+    if (existing) {
+      const dialogue: Dialogue = { ...existing, speaker: data.speaker ?? existing.speaker, with: data.with ?? existing.with, content: data.content ?? existing.content, context: data.context ?? existing.context, chapterId: data.chapterId ?? existing.chapterId, seq: data.seq ?? existing.seq, updatedAt: time }
+      saveDialogue(data.projectId, dialogue)
+      return dialogue
+    } else {
+      const id = data.id || randomUUID()
+      const dialogue: Dialogue = { id, projectId: data.projectId, speaker: data.speaker ?? '', with: data.with ?? '', content: data.content ?? '', context: data.context ?? '', chapterId: data.chapterId ?? '', seq: data.seq ?? 0, createdAt: time, updatedAt: time }
+      saveDialogue(data.projectId, dialogue)
+      return dialogue
+    }
+  })
+
+  ipcMain.handle('dialogue:delete', (_event, id: string) => {
+    const allProjects = loadProjects()
+    for (const project of allProjects) {
+      if (loadDialogues(project.id).find(d => d.id === id)) {
+        deleteDialogue(project.id, id)
         break
       }
     }

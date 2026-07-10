@@ -88,6 +88,19 @@ export interface Timeline {
   updatedAt: string
 }
 
+export interface Dialogue {
+  id: string
+  projectId: string
+  speaker: string
+  with: string
+  content: string
+  context: string
+  chapterId: string
+  seq: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Item {
   id: string
   projectId: string
@@ -187,6 +200,8 @@ interface AppState {
   worldSettings: WorldSetting[]
   // 时间线
   timelines: Timeline[]
+  // 对话
+  dialogues: Dialogue[]
   // 物品
   items: Item[]
   // 地点场景
@@ -252,6 +267,10 @@ interface AppState {
   loadTimelines: (projectId: string) => Promise<void>
   saveTimeline: (data: Partial<Timeline> & { projectId: string }) => Promise<void>
   deleteTimeline: (id: string) => Promise<void>
+  // 对话操作
+  loadDialogues: (projectId: string) => Promise<void>
+  saveDialogue: (data: Partial<Dialogue> & { projectId: string }) => Promise<void>
+  deleteDialogue: (id: string) => Promise<void>
   // 物品操作
   loadItems: (projectId: string) => Promise<void>
   saveItem: (data: Partial<Item> & { projectId: string }) => Promise<void>
@@ -304,6 +323,7 @@ export const useAppStore = create<AppState>()(
   worldSettings: [],
   timelines: [],
   locations: [],
+  dialogues: [],
   items: [],
   characterRelations: [],
   inspirations: [],
@@ -377,6 +397,7 @@ export const useAppStore = create<AppState>()(
       worldSettings: isCurrent ? [] : get().worldSettings,
       timelines: isCurrent ? [] : get().timelines,
       locations: isCurrent ? [] : get().locations,
+      dialogues: isCurrent ? [] : get().dialogues,
       items: isCurrent ? [] : get().items,
       characterRelations: isCurrent ? [] : get().characterRelations,
       inspirations: isCurrent ? [] : get().inspirations,
@@ -562,6 +583,32 @@ export const useAppStore = create<AppState>()(
     await window.api.deleteItem(id)
     const { items } = get()
     set({ items: items.filter((i) => i.id !== id) })
+  },
+
+  // 对话操作
+  loadDialogues: async (projectId) => {
+    const dialogues = await window.api.getDialogues(projectId)
+    set({ dialogues })
+  },
+
+  saveDialogue: async (data) => {
+    const saved = await window.api.saveDialogue(data)
+    if (!saved) throw new Error('保存对话失败：后端返回空')
+    const { dialogues } = get()
+    const existingIdx = dialogues.findIndex((d) => d.id === saved.id)
+    if (existingIdx >= 0) {
+      const updated = [...dialogues]
+      updated[existingIdx] = saved
+      set({ dialogues: updated })
+    } else {
+      set({ dialogues: [...dialogues, saved] })
+    }
+  },
+
+  deleteDialogue: async (id) => {
+    await window.api.deleteDialogue(id)
+    const { dialogues } = get()
+    set({ dialogues: dialogues.filter((d) => d.id !== id) })
   },
 
   // 角色关系操作
