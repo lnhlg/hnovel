@@ -117,6 +117,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const loadCharacterRelations = useAppStore((s) => s.loadCharacterRelations)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const searchOverlayRef = useRef<HTMLPreElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [generatingOutline, setGeneratingOutline] = useState(false)
@@ -144,6 +145,86 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const polishRedoStack = useRef<string[]>([])
   const [showPolishHistory, setShowPolishHistory] = useState(false)
   const [deAiMode, setDeAiMode] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchMatchIdx, setSearchMatchIdx] = useState(0)
+  const [searchText, setSearchText] = useState('')
+  const [searchSbw, setSearchSbw] = useState(0)
+  const searchMatches = useRef<number[]>([])
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Ctrl+F 搜索
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault()
+        if (searchOpen) {
+          searchInputRef.current?.focus()
+        } else {
+          setSearchOpen(true)
+          setTimeout(() => searchInputRef.current?.focus(), 0)
+        }
+      }
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false)
+        setSearchQuery('')
+        setSearchMatchIdx(-1)
+        searchMatches.current = []
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [searchOpen])
+
+  const doSearch = (query: string) => {
+    setSearchQuery(query)
+    const ta = textareaRef.current
+    if (!ta || !query.trim()) { searchMatches.current = []; setSearchMatchIdx(-1); setSearchText(''); return }
+    const text = ta.value
+    setSearchText(text)
+    if (!searchSbw) setSearchSbw(ta.offsetWidth - ta.clientWidth)
+    const indices: number[] = []
+    let idx = -1
+    while ((idx = text.indexOf(query, idx + 1)) !== -1) indices.push(idx)
+    searchMatches.current = indices
+    if (indices.length > 0) {
+      setSearchMatchIdx(0)
+      selectMatch(indices[0], query.length, ta, true)
+    } else {
+      setSearchMatchIdx(-1)
+    }
+  }
+
+  const selectMatch = (pos: number, len: number, ta?: HTMLTextAreaElement, keepFocus?: boolean) => {
+    const t = ta || textareaRef.current
+    if (!t) return
+    if (!keepFocus) t.focus()
+    t.selectionStart = pos
+    t.selectionEnd = pos + len
+    // 基于位置比例估算滚动位置
+    const ratio = t.value.length > 0 ? pos / t.value.length : 0
+    const maxScroll = t.scrollHeight - t.clientHeight
+    t.scrollTop = Math.round(ratio * Math.max(maxScroll, 0))
+  }
+
+  const goToMatch = (dir: 1 | -1) => {
+    const indices = searchMatches.current
+    if (indices.length === 0) return
+    let next: number
+    if (searchMatchIdx < 0) {
+      next = dir > 0 ? 0 : indices.length - 1
+    } else {
+      next = (searchMatchIdx + dir + indices.length) % indices.length
+    }
+    setSearchMatchIdx(next)
+    selectMatch(indices[next], searchQuery.length, undefined, false)
+    textareaRef.current?.focus()
+  }
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val)
+    doSearch(val)
+  }
 
   // 加载润色指令历史（滤掉与 skill 内容一致的项）
   useEffect(() => {
@@ -281,6 +362,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const v = e.target.value
+    if (searchOpen && searchQuery) setSearchText(v)
     // 用户输入防抖保存撤销点
     if (undoDebounceTimer.current) clearTimeout(undoDebounceTimer.current)
     undoDebounceTimer.current = setTimeout(() => saveUndoPoint(v, subTab), 800)
@@ -778,54 +860,93 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         </div>
       </div>
 
+      {/* 搜索栏 */}
+      {searchOpen && (
+        <div className="flex items-center gap-2 px-4 py-1.5" style={{ borderBottom: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-sidebar)' }}>
+          <input ref={searchInputRef} value={searchQuery} onChange={e => handleSearchChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToMatch(e.shiftKey ? -1 : 1) } }}
+            placeholder="搜索..."
+            style={{ flex: 1, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12, outline: 'none' }} />
+          <span className="text-xs" style={{ color: 'var(--color-text-dim)', minWidth: 60, textAlign: 'center' }}>
+            {searchQuery ? `${searchMatchIdx < 0 ? 0 : searchMatchIdx + 1}/${searchMatches.current.length}` : ''}
+          </span>
+          <button onClick={() => goToMatch(-1)} disabled={!searchQuery} style={{ padding: '2px 6px', borderRadius: 3, border: '1px solid var(--color-border)', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 11, opacity: searchQuery ? 1 : 0.4 }}>▲</button>
+          <button onClick={() => goToMatch(1)} disabled={!searchQuery} style={{ padding: '2px 6px', borderRadius: 3, border: '1px solid var(--color-border)', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 11, opacity: searchQuery ? 1 : 0.4 }}>▼</button>
+          <button onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchMatchIdx(-1); searchMatches.current = []; textareaRef.current?.focus() }}
+            style={{ padding: '2px 6px', borderRadius: 3, border: 'none', backgroundColor: 'transparent', color: 'var(--color-text-dim)', cursor: 'pointer', fontSize: 11 }}>✕</button>
+        </div>
+      )}
+
       {/* 编辑区 */}
-      <textarea
-        ref={textareaRef}
-        defaultValue={activeText}
-        onChange={handleTextareaChange}
-        onContextMenu={handleContextMenu}
-        onKeyDown={e => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-            e.preventDefault()
-            const ta = textareaRef.current
-            if (!ta || mainUndoStack.current.length === 0) return
-            const cur = { text: ta.value, tab: subTab }
-            const prev = mainUndoStack.current.pop()!
-            mainRedoStack.current.push(cur)
-            ta.value = prev.text
-            if (prev.tab === 'outline') outlineRef.current = prev.text
-            else contentRef.current = prev.text
-            const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
-            setDocContent(doc.id, full)
-          }
-          if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-            e.preventDefault()
-            const ta = textareaRef.current
-            if (!ta || mainRedoStack.current.length === 0) return
-            const cur = { text: ta.value, tab: subTab }
-            const next = mainRedoStack.current.pop()!
-            mainUndoStack.current.push(cur)
-            ta.value = next.text
-            if (next.tab === 'outline') outlineRef.current = next.text
-            else contentRef.current = next.text
-            const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
-            setDocContent(doc.id, full)
-          }
-        }}
-        className="flex-1 w-full resize-none border-none bg-transparent text-base leading-relaxed outline-none p-6"
-        style={{
-          color: 'var(--color-text)',
-          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-          fontSize: '14px',
-          lineHeight: '1.7'
-        }}
-        placeholder={
-          subTab === 'outline'
-            ? '编写本章大纲、情节要点、关键转折...'
-            : '编写正文内容...'
-        }
-        spellCheck={false}
-      />
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {searchOpen && searchQuery && (() => {
+          try {
+            const text = searchText
+            if (!text) return null
+            const parts: JSX.Element[] = []
+            let lastIdx = 0, idx = -1, matchCount = 0
+            while ((idx = text.indexOf(searchQuery, lastIdx)) !== -1) {
+              if (idx > lastIdx) parts.push(<span key={`t${parts.length}`}>{text.slice(lastIdx, idx)}</span>)
+              parts.push(<mark key={`m${parts.length}`} style={{ backgroundColor: matchCount === searchMatchIdx ? '#ff9632' : '#ffff0066', color: matchCount === searchMatchIdx ? '#fff' : 'inherit', borderRadius: 2, padding: '0 1px' }}>{text.slice(idx, idx + searchQuery.length)}</mark>)
+              lastIdx = idx + searchQuery.length; matchCount++
+            }
+            if (lastIdx < text.length) parts.push(<span key={`t${parts.length}`}>{text.slice(lastIdx)}</span>)
+            return (
+              <pre ref={el => { searchOverlayRef.current = el; if (el && textareaRef.current) { el.scrollTop = textareaRef.current.scrollTop; if (!searchSbw) setSearchSbw(textareaRef.current.offsetWidth - textareaRef.current.clientWidth) } }}
+                style={{ position: 'absolute', top: 0, left: 0, right: searchSbw, bottom: 0, margin: 0, padding: '24px', pointerEvents: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace', fontSize: '14px', lineHeight: '1.7', color: 'var(--color-text)', overflow: 'hidden' }}>
+                {parts}
+              </pre>
+            )
+          } catch (e) { return null }
+        })()}
+        <textarea
+          ref={textareaRef}
+          defaultValue={activeText}
+          onChange={handleTextareaChange}
+          onContextMenu={handleContextMenu}
+          onScroll={() => { if (searchOverlayRef.current && textareaRef.current) searchOverlayRef.current.scrollTop = textareaRef.current.scrollTop }}
+          onKeyDown={e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); searchInputRef.current?.focus(); return }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+              e.preventDefault()
+              const ta = textareaRef.current
+              if (!ta || mainUndoStack.current.length === 0) return
+              const cur = { text: ta.value, tab: subTab }
+              const prev = mainUndoStack.current.pop()!
+              mainRedoStack.current.push(cur)
+              ta.value = prev.text
+              if (prev.tab === 'outline') outlineRef.current = prev.text
+              else contentRef.current = prev.text
+              const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+              setDocContent(doc.id, full)
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+              e.preventDefault()
+              const ta = textareaRef.current
+              if (!ta || mainRedoStack.current.length === 0) return
+              const cur = { text: ta.value, tab: subTab }
+              const next = mainRedoStack.current.pop()!
+              mainUndoStack.current.push(cur)
+              ta.value = next.text
+              if (next.tab === 'outline') outlineRef.current = next.text
+              else contentRef.current = next.text
+              const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+              setDocContent(doc.id, full)
+            }
+          }}
+          className="flex-1 w-full resize-none border-none outline-none p-6"
+          style={{
+            position: 'relative', zIndex: 1,
+            color: searchOpen && searchQuery ? 'transparent' : 'var(--color-text)',
+            caretColor: 'var(--color-text)',
+            backgroundColor: 'transparent',
+            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+            fontSize: '14px', lineHeight: '1.7', minHeight: '100%'
+          }}
+          placeholder={subTab === 'outline' ? '编写本章大纲、情节要点、关键转折...' : '编写正文内容...'}
+          spellCheck={false}
+        />
+      </div>
 
       {/* 右键菜单 */}
       {contextMenu && (

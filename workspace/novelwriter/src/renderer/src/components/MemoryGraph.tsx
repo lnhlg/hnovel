@@ -429,7 +429,7 @@ export default function MemoryGraph({
 
   const handleNodeClick = (e: React.MouseEvent, node: MemoryNode) => {
     e.stopPropagation()
-    if (node.type === 'character') {
+    if (node.type === 'character' || node.type === 'item' || node.type === 'organization') {
       const rect = svgRef.current?.getBoundingClientRect()
       const pos = nodePosMap.get(node.id)
       if (rect && pos) {
@@ -621,7 +621,7 @@ export default function MemoryGraph({
   }
 
   const handleOpenCharDoc = () => {
-    if (popupNode) {
+    if (popupNode && popupNode.node.type === 'character') {
       onNodeClick?.('character', popupNode.node.id)
       setPopupNode(null)
     }
@@ -1204,15 +1204,19 @@ export default function MemoryGraph({
         )
       })()}
 
-      {popupNode && popupNode.node.type === 'character' && (() => {
-        const charId = popupNode.node.id.replace('char:', '')
-        const char = characters.find(c => c.id === charId)
-        if (!char) return null
-        const statusLines = (char.importantEvents || '').split('\n').filter(Boolean)
+      {popupNode && (popupNode.node.type === 'character' || popupNode.node.type === 'item' || popupNode.node.type === 'organization') && (() => {
+        const node = popupNode.node
+        const isChar = node.type === 'character'
+        const isItem = node.type === 'item'
+        const isOrg = node.type === 'organization'
+
+        const itemData = isItem && items ? items.find(i => `itm:${i.id}` === node.id) : null
+
+        // 角色信息
+        const char = isChar ? characters.find(c => `char:${c.id}` === node.id) : null
+        const statusLines = char ? (char.importantEvents || '').split('\n').filter(Boolean) : []
         const currentStatus = (() => {
-          if (selectedChOrder < 0) {
-            return statusLines.length > 0 ? statusLines[statusLines.length - 1].replace(/\[ch:.*?\]/g, '').trim() : ''
-          }
+          if (!char) return ''
           let last = ''
           for (const line of statusLines) {
             const m = line.match(/\[ch:([^\]]+)\]/)
@@ -1227,7 +1231,7 @@ export default function MemoryGraph({
         const relEdges = allEdges.filter(e =>
           (e.sourceId === popupNode.node.id || e.targetId === popupNode.node.id)
         )
-        const charDialogues = (dialogues || []).filter(d => d.speaker === char.name)
+        const charDialogues = char ? (dialogues || []).filter(d => d.speaker === char.name) : []
         const connectedLabels = relEdges.map(e => {
           const otherId = e.sourceId === popupNode.node.id ? e.targetId : e.sourceId
           const other = nodes.find(n => n.id === otherId)
@@ -1245,15 +1249,35 @@ export default function MemoryGraph({
             boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
             fontSize: 11, color: 'var(--color-text)'
           }}>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{char.name}</div>
-            {char.role && <div style={{ color: 'var(--color-text-secondary)', marginBottom: 4 }}>{char.role}</div>}
-            {char.description && <div style={{ color: 'var(--color-text-dim)', marginBottom: 4, lineHeight: 1.4 }}>{char.description}</div>}
-            {currentStatus && (
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{node.name}</div>
+
+            {isChar && char?.role && <div style={{ color: 'var(--color-text-secondary)', marginBottom: 4 }}>{char.role}</div>}
+            {isChar && char?.description && <div style={{ color: 'var(--color-text-dim)', marginBottom: 4, lineHeight: 1.4 }}>{char.description}</div>}
+            {isChar && currentStatus && (
               <div style={{ marginBottom: 4 }}>
                 <span style={{ color: '#4f8cff', fontWeight: 500 }}>当前状态：</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>{currentStatus}</span>
               </div>
             )}
+
+            {isItem && itemData && (
+              <div style={{ marginBottom: 4 }}>
+                {itemData.status && <div><span style={{ color: 'var(--color-text-muted)' }}>状态：</span><span style={{ color: 'var(--color-text-secondary)' }}>{itemData.status}</span></div>}
+                {itemData.owner && <div><span style={{ color: 'var(--color-text-muted)' }}>持有者：</span><span style={{ color: 'var(--color-text-secondary)' }}>{itemData.owner}</span></div>}
+                {itemData.appearance && <div><span style={{ color: 'var(--color-text-muted)' }}>外形：</span><span style={{ color: 'var(--color-text-secondary)' }}>{itemData.appearance}</span></div>}
+                {itemData.size && <div><span style={{ color: 'var(--color-text-muted)' }}>大小：</span><span style={{ color: 'var(--color-text-secondary)' }}>{itemData.size}</span></div>}
+                {itemData.pattern && <div><span style={{ color: 'var(--color-text-muted)' }}>纹饰：</span><span style={{ color: 'var(--color-text-secondary)' }}>{itemData.pattern}</span></div>}
+                {itemData.description && <div><span style={{ color: 'var(--color-text-muted)' }}>描述：</span><span style={{ color: 'var(--color-text-dim)' }}>{itemData.description}</span></div>}
+              </div>
+            )}
+
+            {isOrg && (
+              <div style={{ marginBottom: 4 }}>
+                <div><span style={{ color: 'var(--color-text-muted)' }}>类型：</span><span style={{ color: 'var(--color-text-secondary)' }}>组织</span></div>
+                {node.subtitle && <div><span style={{ color: 'var(--color-text-muted)' }}>分类：</span><span style={{ color: 'var(--color-text-secondary)' }}>{node.subtitle}</span></div>}
+              </div>
+            )}
+
             {connectedLabels.length > 0 && (
               <div style={{ marginBottom: 4 }}>
                 <span style={{ color: 'var(--color-text-muted)' }}>关联：</span>
@@ -1262,7 +1286,7 @@ export default function MemoryGraph({
                 ))}
               </div>
             )}
-            {charDialogues.length > 0 && (
+            {isChar && charDialogues.length > 0 && (
               <div style={{ marginBottom: 4 }}>
                 <span style={{ color: 'var(--color-text-muted)' }}>重要对话：</span>
                 {charDialogues.slice(0, 3).map((d, i) => (
@@ -1280,10 +1304,12 @@ export default function MemoryGraph({
                 style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid var(--color-border)', backgroundColor: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 10 }}>
                 关闭
               </button>
-              <button onClick={handleOpenCharDoc}
-                style={{ padding: '2px 8px', borderRadius: 4, border: 'none', backgroundColor: 'var(--color-accent)', color: '#fff', cursor: 'pointer', fontSize: 10 }}>
-                查看详情
-              </button>
+              {isChar && (
+                <button onClick={handleOpenCharDoc}
+                  style={{ padding: '2px 8px', borderRadius: 4, border: 'none', backgroundColor: 'var(--color-accent)', color: '#fff', cursor: 'pointer', fontSize: 10 }}>
+                  查看详情
+                </button>
+              )}
             </div>
           </div>
         )
