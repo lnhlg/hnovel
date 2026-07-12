@@ -244,6 +244,8 @@ interface AppState {
     chapterTitle: string
     chapterOutline: string
     previousChapters: { title: string; content: string }[]
+    providerId?: string
+    model?: string
   }) => Promise<string>
   aiPlanChapters: (opts: { synopsis: string; numChapters: number }) => Promise<unknown>
   // AI 资产生成
@@ -254,6 +256,8 @@ interface AppState {
     count?: number
     chapterTitle?: string
     chapterContent?: string
+    providerId?: string
+    model?: string
   }) => Promise<{ data?: unknown; error?: string; raw?: string }>
   // AI 对话参数
   setChatModel: (model: string) => void

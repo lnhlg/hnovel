@@ -129,6 +129,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [extractText, setExtractText] = useState('')
   const [showAiChatOutline, setShowAiChatOutline] = useState(false)
   const [genContentDialog, setGenContentDialog] = useState(false)
+  const [genOutlineDialog, setGenOutlineDialog] = useState(false)
   const [showAiPolish, setShowAiPolish] = useState(false)
   const [polishInstruction, setPolishInstruction] = useState('')
   const [polishing, setPolishing] = useState(false)
@@ -600,7 +601,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         type: 'chapter-outline',
         projectId: currentProject.id,
         chapterTitle: title,
-        chapterContent: body
+        chapterContent: body,
+        providerId: chatProviderId || undefined,
+        model: chatModel || undefined
       })
       if (result.error) {
         alert('生成失败：' + result.error)
@@ -677,16 +680,6 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, providerId: polishProviderId || undefined, reasoningEffort: polishEffort })
       if (result) {
         setPolishResult(result.trim())
-        // 保存指令到历史（跳过与 skill 内容完全一致的，避免去AI味技能的全文反复写入）
-        const defaultContent = deAiMode && currentProject?.skillId
-          ? skills.find(s => s.id === currentProject.skillId)?.content || ''
-          : ''
-        if (polishInstruction !== defaultContent) {
-          const latest: string[] = JSON.parse(localStorage.getItem('novelwriter-polish-history') || '[]')
-          const h = [polishInstruction, ...latest.filter(x => x !== polishInstruction)].slice(0, 10)
-          setPolishHistory(h)
-          localStorage.setItem('novelwriter-polish-history', JSON.stringify(h))
-        }
       }
     } catch (err) {
       // 不使用 alert：alert 是同步阻塞弹窗，会窃取焦点导致 ModelSelector 搜索框无法 refocus
@@ -698,6 +691,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
   const handleApplyPolish = (): void => {
     if (!polishResult || !textareaRef.current) return
+    // 保存指令到历史
+    const defaultContent = deAiMode && currentProject?.skillId
+      ? skills.find(s => s.id === currentProject.skillId)?.content || ''
+      : ''
+    if (polishInstruction && polishInstruction !== defaultContent) {
+      const existing: string[] = JSON.parse(localStorage.getItem('novelwriter-polish-history') || '[]')
+      const h = [polishInstruction, ...existing.filter(x => x !== polishInstruction)].slice(0, 10)
+      setPolishHistory(h)
+      localStorage.setItem('novelwriter-polish-history', JSON.stringify(h))
+    }
     const ta = textareaRef.current
     saveUndoPoint(ta.value, subTab)
     const scrollTop = ta.scrollTop
@@ -777,7 +780,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         synopsis: currentProject.synopsis,
         chapterTitle: chapter.title,
         chapterOutline: outline,
-        previousChapters: prevChapters
+        previousChapters: prevChapters,
+        providerId: chatProviderId || undefined,
+        model: chatModel || undefined
       })
     } finally {
       cleanup?.()
@@ -1000,7 +1005,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 style={{ color: 'var(--color-text)' }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--color-hover)'}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                onClick={() => { setContextMenu(null); handleGenerateOutline() }}
+                onClick={() => { setContextMenu(null); setGenOutlineDialog(true) }}
                 disabled={generatingOutline}
               >
                 <Sparkles size={12} />
@@ -1125,6 +1130,24 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         />
       )}
 
+      {/* AI 从正文生成大纲 */}
+      {genOutlineDialog && (
+        <AIGenerateDialog
+          title="从正文生成大纲"
+          chapterTitle={doc.title}
+          onClose={() => setGenOutlineDialog(false)}
+          onStart={async () => {
+            try {
+              await handleGenerateOutline()
+            } catch (err) {
+              throw err
+            } finally {
+              setGenOutlineDialog(false)
+            }
+          }}
+        />
+      )}
+
       {/* AI 生成正文 */}
       {genContentDialog && (
         <AIGenerateDialog
@@ -1145,7 +1168,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
 
       {/* AI 润色对话框 */}
       {showAiPolish && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setShowAiPolish(false); setDeAiMode(false) }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div
             className="w-full rounded-xl bg-white p-6 shadow-2xl flex flex-col"
             style={{ backgroundColor: 'var(--color-surface)', width: '96vw', maxWidth: '1800px', height: '94vh' }}

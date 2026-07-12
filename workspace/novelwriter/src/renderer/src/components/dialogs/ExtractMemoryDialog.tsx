@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Loader2, Check, ChevronDown, ChevronRight, User, Package, Building2, Route, MapPin, HeartHandshake, Eye, MessageSquare, Sparkles } from 'lucide-react'
+import { X, Loader2, Check, ChevronDown, ChevronRight, User, Package, Building2, Route, MapPin, HeartHandshake, Eye, MessageSquare, Sparkles, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/app'
 import { useLayoutStore } from '../../store/layout'
 import ModelSelector from '../ModelSelector'
@@ -666,6 +666,12 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
               >
                 <Eye size={12} />
                 在记忆图谱中查看
+              </button>
+              <button onClick={handleExtract} disabled={loading || saving}
+                className="text-xs py-1.5 px-3 rounded flex items-center gap-1"
+                style={{ color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
+                <RefreshCw size={12} />
+                重新提炼
               </button>
               <button onClick={onClose} className="btn btn-ghost text-xs py-1.5" disabled={saving}>
                 取消

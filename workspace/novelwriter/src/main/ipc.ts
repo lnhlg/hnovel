@@ -615,6 +615,63 @@ export function registerAIOutineHandlers(): void {
       prompt += `【故事进展摘要】（已完成章节的剧情、伏笔、角色变化）\n${storyProgress}\n\n`
     }
 
+    // 注入记忆数据（角色状态、物品、事件、对话、关系等）
+    const chapters = loadChapters(opts.projectId).sort((a, b) => a.sortOrder - b.sortOrder)
+    const chOrderMap = new Map(chapters.map(c => [c.id, c.sortOrder]))
+    const chOf = (s: string) => { const m = s.match(/\[ch:([^\]]+)\]/); return m ? (chOrderMap.get(m[1]) ?? 999) : 999 }
+    const sortByCh = <T extends { chOrder: number }>(arr: T[]) => [...arr].sort((a, b) => a.chOrder - b.chOrder)
+    const memoParts: string[] = []
+    // 角色状态
+    const allChars = loadCharacters(opts.projectId)
+    const stLines: string[] = []
+    for (const c of allChars) {
+      if (!c.importantEvents) continue
+      for (const line of c.importantEvents.split('\n').filter(Boolean)) {
+        if (chOf(line) < 999) stLines.push(line.replace(/\[ch:.*?\]|（[^）]*）/g, '').trim())
+      }
+    }
+    if (stLines.length > 0) memoParts.push(`角色状态变化：\n${stLines.join('\n')}`)
+    // 物品
+    const allItems = loadItems(opts.projectId)
+    if (allItems.length > 0) {
+      memoParts.push(`物品记录：\n${sortByCh(allItems.filter(i => i.chapterId).map(i => ({ chOrder: chOrderMap.get(i.chapterId) ?? 999, text: `- ${i.name}：状态-${i.status || '未知'}，持有者-${i.owner || '无'}` }))).map(i => i.text).join('\n')}`)
+    }
+    // 事件
+    const allTimelines = loadTimelines(opts.projectId)
+    const evLines = allTimelines.filter(t => t.description?.includes('[ch:')).map(t => ({ chOrder: chOf(t.description || ''), text: `- 第${chOf(t.description || '') + 1}章：${t.title}` })).filter(e => e.chOrder < 999)
+    if (evLines.length > 0) memoParts.push(`已发生事件：\n${sortByCh(evLines).map(i => i.text).join('\n')}`)
+    // 对话
+    const allDialogues = loadDialogues(opts.projectId)
+    const dlgLines = allDialogues.filter(d => d.chapterId).map(d => ({ chOrder: chOrderMap.get(d.chapterId) ?? 999, text: `- 第${(chOrderMap.get(d.chapterId) ?? 999) + 1}章：${d.speaker}对${d.with}说"${d.content.slice(0, 60)}${d.content.length > 60 ? '...' : ''}"` })).filter(d => d.chOrder < 999)
+    if (dlgLines.length > 0) memoParts.push(`关键对话：\n${sortByCh(dlgLines).map(i => i.text).join('\n')}`)
+    // 人物关系演变
+    const allRels = loadCharacterRelations(opts.projectId)
+    const relEntries: { key: string; chOrder: number; text: string }[] = []
+    for (const r of allRels) {
+      if (!r.description?.includes('[ch:')) continue
+      const c1 = allChars.find(c => c.id === r.characterId1)
+      const c2 = allChars.find(c => c.id === r.characterId2)
+      if (!c1 || !c2) continue
+      relEntries.push({ key: [c1.name, c2.name].sort().join(':'), chOrder: chOf(r.description), text: `${c1.name} ↔ ${c2.name}：${r.relation}` })
+    }
+    if (relEntries.length > 0) {
+      const relMap = new Map<string, string[]>()
+      for (const e of sortByCh(relEntries)) {
+        const arr = relMap.get(e.key) || []; arr.push(e.text.split('：')[1] || e.text); relMap.set(e.key, arr)
+      }
+      memoParts.push(`人物关系演变：\n${[...relMap.entries()].map(([k, v]) => { const n = k.split(':'); return `- ${n[0]} ↔ ${n[1]}：${v.join(' → ')}` }).join('\n')}`)
+    }
+    // 人物-物品/组织关联
+    const allWS = loadWorldSettings(opts.projectId)
+    const assocLines = allWS.filter(ws => (ws.category === '人物-物品关系' || ws.category === '人物-组织关系') && ws.description?.includes('[ch:')).map(ws => {
+      const [charName, targetRaw] = ws.key.split('→').map(s => s.trim())
+      return { chOrder: chOf(ws.description), text: `- ${charName} → ${(targetRaw || '').replace(/@.*$/, '')}：${ws.value || '关联'}` }
+    }).filter(a => a.chOrder < 999)
+    if (assocLines.length > 0) memoParts.push(`人物关联：\n${sortByCh(assocLines).map(i => i.text).join('\n')}`)
+    if (memoParts.length > 0) {
+      prompt += `【记忆数据】（从已有章节提取的记忆信息）\n${memoParts.join('\n\n')}\n\n`
+    }
+
     // 注入写作风格指令（优先使用项目选中的文风）
     const projectWritingStyleId = loadProjectById(opts.projectId)?.writingStyleId
     let styleToUse

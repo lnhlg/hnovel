@@ -207,7 +207,7 @@ interface AIChatDialogProps {
 }
 
 export default function AIChatDialog({ open, onClose, entityType, projectId, chapterId }: AIChatDialogProps): JSX.Element | null {
-  const { characters, worldSettings, locations, saveCharacter, saveWorldSetting, saveLocation, loadCharacters, loadWorldSettings, loadLocations, saveChapterOutline, storyProgress, loadStoryProgress, chapters, loadChapters, chatModel, chatProviderId, chatReasoningEffort, setChatModel, setChatProviderId, setChatReasoningEffort } = useAppStore()
+  const { characters, worldSettings, locations, saveCharacter, saveWorldSetting, saveLocation, loadCharacters, loadWorldSettings, loadLocations, saveChapterOutline, storyProgress, loadStoryProgress, chapters, loadChapters, chatModel, chatProviderId, chatReasoningEffort, setChatModel, setChatProviderId, setChatReasoningEffort, dialogues, items, characterRelations, timelines, loadDialogues, loadItems, loadCharacterRelations, loadTimelines } = useAppStore()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -262,11 +262,81 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
             }
           }
         }
+        // ===== 记忆数据注入 =====
+        type MemoItem = { chOrder: number; text: string }
+        const chOrderMap = new Map(chapters.map(c => [c.id, c.sortOrder]))
+        const chOf = (s: string) => { const m = s.match(/\[ch:([^\]]+)\]/); return m ? (chOrderMap.get(m[1]) ?? 999) : 999 }
+        // 角色当前状态
+        const charStatus: MemoItem[] = []
+        for (const c of characters) {
+          if (!c.importantEvents) continue
+          const lines = c.importantEvents.split('\n').filter(Boolean)
+          for (const line of lines) {
+            const order = chOf(line)
+            if (order < 999) charStatus.push({ chOrder: order, text: `${c.name}：${line.replace(/\[ch:.*?\]|（[^）]*）/g, '').trim()}` })
+          }
+        }
+        if (charStatus.length > 0) {
+          cp.push(`【角色状态变化】\n${charStatus.sort((a, b) => a.chOrder - b.chOrder).map(i => i.text).join('\n')}`)
+        }
+        // 物品记录
+        if (items?.length > 0) {
+          const itemEntries: MemoItem[] = items.filter(i => i.chapterId).map(i => ({ chOrder: chOrderMap.get(i.chapterId) ?? 999, text: `- ${i.name}：状态-${i.status || '未知'}，持有者-${i.owner || '无'}${i.appearance ? `，外形-${i.appearance}` : ''}${i.size ? `，大小-${i.size}` : ''}` }))
+          if (itemEntries.length > 0) cp.push(`【物品记录】\n${itemEntries.sort((a, b) => a.chOrder - b.chOrder).map(i => i.text).join('\n')}`)
+        }
+        // 已发生事件
+        if (timelines?.length > 0) {
+          const evEntries: MemoItem[] = timelines.filter(t => t.description?.includes('[ch:')).map(t => ({ chOrder: chOf(t.description || ''), text: `第${chOf(t.description || '') + 1}章：${t.title}${t.description ? ` - ${t.description.replace(/\[ch:.*?\]|（[^）]*）/g, '').trim().slice(0, 100)}` : ''}` }))
+          if (evEntries.length > 0) cp.push(`【已发生事件】\n${evEntries.sort((a, b) => a.chOrder - b.chOrder).map(i => i.text).join('\n')}`)
+        }
+        // 关键对话
+        if (dialogues?.length > 0) {
+          const dlgEntries: MemoItem[] = dialogues.filter(d => d.chapterId).map(d => ({ chOrder: chOrderMap.get(d.chapterId) ?? 999, text: `第${(chOrderMap.get(d.chapterId) ?? 999) + 1}章：${d.speaker}对${d.with}说"${d.content.slice(0, 60)}${d.content.length > 60 ? '...' : ''}"` }))
+          if (dlgEntries.length > 0) cp.push(`【关键对话记录】\n${dlgEntries.sort((a, b) => a.chOrder - b.chOrder).map(i => i.text).join('\n')}`)
+        }
+        // 人物关系演变
+        if (characterRelations?.length > 0) {
+          const relEntries: { key: string; chOrder: number; text: string }[] = []
+          for (const r of characterRelations) {
+            if (!r.description?.includes('[ch:')) continue
+            const c1 = characters.find(c => c.id === r.characterId1)
+            const c2 = characters.find(c => c.id === r.characterId2)
+            if (!c1 || !c2) continue
+            relEntries.push({ key: [c1.name, c2.name].sort().join(':'), chOrder: chOf(r.description), text: `${c1.name} ↔ ${c2.name}：${r.relation}` })
+          }
+          if (relEntries.length > 0) {
+            // 按角色对聚合，展示演变
+            const relMap = new Map<string, string[]>()
+            for (const e of relEntries.sort((a, b) => a.chOrder - b.chOrder)) {
+              const arr = relMap.get(e.key) || []
+              arr.push(e.text.split('：')[1] || e.text)
+              relMap.set(e.key, arr)
+            }
+            const relLines: string[] = []
+            for (const [key, vals] of relMap) {
+              const names = key.split(':')
+              relLines.push(`${names[0]} ↔ ${names[1]}：${vals.join(' → ')}`)
+            }
+            cp.push(`【人物关系演变】\n${relLines.join('\n')}`)
+          }
+        }
+        // 人物-物品/组织关联
+        const assocEntries: MemoItem[] = []
+        for (const ws of worldSettings) {
+          if ((ws.category === '人物-物品关系' || ws.category === '人物-组织关系') && ws.description?.includes('[ch:')) {
+            const [charName, targetRaw] = ws.key.split('→').map(s => s.trim())
+            const target = (targetRaw || '').replace(/@.*$/, '')
+            assocEntries.push({ chOrder: chOf(ws.description), text: `- ${charName} → ${target}：${ws.value || '关联'}` })
+          }
+        }
+        if (assocEntries.length > 0) {
+          cp.push(`【人物关联】\n${assocEntries.sort((a, b) => a.chOrder - b.chOrder).map(i => i.text).join('\n')}`)
+        }
         return cp.join('\n\n')
       default:
         return ''
     }
-  }, [entityType, characters, worldSettings, locations, storyProgress, chapterId, chapters])
+  }, [entityType, characters, worldSettings, locations, storyProgress, chapterId, chapters, dialogues, items, characterRelations, timelines])
 
   useEffect(() => {
     if (!open) {
@@ -277,10 +347,14 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     const existingList = getExistingList()
     const sysPrompt = buildSystemPrompt(entityType, existingList)
 
-    // 加载故事进展摘要和章节列表（用于章纲对话）
+    // 加载故事进展摘要、章节列表和记忆数据（用于章纲对话）
     if (entityType === 'chapterOutline') {
       loadStoryProgress(projectId)
       loadChapters(projectId)
+      loadDialogues(projectId)
+      loadItems(projectId)
+      loadCharacterRelations(projectId)
+      loadTimelines(projectId)
     }
 
     const cfg = ENTITY_CONFIG[entityType]
@@ -614,7 +688,6 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
-      onClick={(e) => { if (e.target === e.currentTarget && !loading) onClose() }}
     >
       <div
         className="rounded-xl shadow-2xl w-[90vw] h-[85vh] overflow-hidden flex flex-col"
