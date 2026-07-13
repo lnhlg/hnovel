@@ -670,12 +670,12 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const outlineCtx = outlineRef.current?.trim()
       const userMsg = polishCtxBefore || polishCtxAfter
         ? `${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
-          + (polishCtxBefore ? `上文（仅供理解上下文参考，不要润色）：\n${polishCtxBefore}\n\n` : '')
-          + `【目标文本（仅润色此段）】\n${extractText}\n\n`
-          + (polishCtxAfter ? `下文（仅供理解上下文参考，不要润色）：\n${polishCtxAfter}` : '')
+          + (polishCtxBefore ? `【上文上下文】（润色后的目标文本需要与下文衔接自然）\n${polishCtxBefore}\n\n` : '')
+          + `【需要润色的目标文本】\n${extractText}\n\n`
+          + (polishCtxAfter ? `【下文上下文】（润色后的目标文本需要与下文衔接自然）\n${polishCtxAfter}` : '')
         : `${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}`
       const messages = [
-        { role: 'system', content: '你是一位专业的小说文本润色编辑。请根据用户的要求，仅对标记为【目标文本】的段落进行润色加工。只返回润色后的文本，不要加任何解释或标记。' },
+        { role: 'system', content: '你是一位专业的小说文本润色编辑。仅对标记为【需要润色的目标文本】的段落进行润色加工，保持语言风格与上下文一致，确保与上下文自然衔接。只返回润色后的文本，不要加任何解释或标记。' },
         { role: 'user', content: userMsg }
       ]
       const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, providerId: polishProviderId || undefined, reasoningEffort: polishEffort })
