@@ -412,8 +412,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     setExtractText(source)
     // 保存选中区域的上下文（前后各500字）
     if (textarea && selectedText) {
-      const before = textarea.value.substring(Math.max(0, textarea.selectionStart - 500), textarea.selectionStart)
-      const after = textarea.value.substring(textarea.selectionEnd, Math.min(textarea.value.length, textarea.selectionEnd + 500))
+      const before = textarea.value.substring(0, textarea.selectionStart)
+      const after = textarea.value.substring(textarea.selectionEnd)
       setPolishCtxBefore(before)
       setPolishCtxAfter(after)
     } else {
@@ -667,12 +667,13 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     setPolishResult('')
     setPolishError('')
     try {
+      const outlineCtx = outlineRef.current?.trim()
       const userMsg = polishCtxBefore || polishCtxAfter
-        ? `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
+        ? `${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
           + (polishCtxBefore ? `上文（仅供理解上下文参考，不要润色）：\n${polishCtxBefore}\n\n` : '')
           + `【目标文本（仅润色此段）】\n${extractText}\n\n`
           + (polishCtxAfter ? `下文（仅供理解上下文参考，不要润色）：\n${polishCtxAfter}` : '')
-        : `请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}`
+        : `${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}`
       const messages = [
         { role: 'system', content: '你是一位专业的小说文本润色编辑。请根据用户的要求，仅对标记为【目标文本】的段落进行润色加工。只返回润色后的文本，不要加任何解释或标记。' },
         { role: 'user', content: userMsg }
