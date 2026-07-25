@@ -342,6 +342,15 @@ export function setCurrentModel(model: string): void {
   }
 }
 
+// 当前正在进行的 AI 请求控制器（用于中止）
+let currentAbortController: AbortController | null = null
+
+// 中止当前 AI 请求
+export function abortCurrentRequest(): void {
+  currentAbortController?.abort()
+  currentAbortController = null
+}
+
 export function registerAIHandlers(): void {
   // 获取当前活跃供应商和模型
   ipcMain.handle('ai:getCurrentConfig', () => {
@@ -535,20 +544,25 @@ export function registerAIHandlers(): void {
       throw new Error('请先选择模型')
     }
 
+    // 创建可中止的请求
+    const abortController = new AbortController()
+    currentAbortController = abortController
+    const signal = abortController.signal
+
     if (provider.type === 'ollama') {
       if (isStream && window) {
         return await chatOllama(provider, model, messages, (chunk) => {
           window.webContents.send('ai:chunk', chunk)
-        })
+        }, signal)
       }
-      return await chatOllama(provider, model, messages)
+      return await chatOllama(provider, model, messages, undefined, signal)
     } else {
       if (isStream && window) {
         return await chatOpenAIStream(provider, model, messages, (chunk) => {
           window.webContents.send('ai:chunk', chunk)
-        }, undefined, reasoningEffort)
+        }, signal, reasoningEffort)
       }
-      return await chatOpenAI(provider, model, messages, undefined, reasoningEffort)
+      return await chatOpenAI(provider, model, messages, signal, reasoningEffort)
     }
   })
 
@@ -569,7 +583,11 @@ export function registerAIHandlers(): void {
     return result
   })
 
-  // 供其他模块调用的聊天接口（指定供应商和模型）
+  // 中止当前正在进行的 AI 请求
+  ipcMain.handle('ai:abort', () => {
+    abortCurrentRequest()
+    return { success: true }
+  })
   ipcMain.handle('ai:chatWithProvider', async (_event, providerId: string, model: string, messages: ChatMessage[], options?: { stream?: boolean; sessionId?: string }) => {
     const provider = loadAIProviders().find(p => p.id === providerId)
     if (!provider) {

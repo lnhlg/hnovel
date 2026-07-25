@@ -224,9 +224,23 @@ export default function MemoryGraph({
   }, [characters, items, worldSettings, characterRelations, chOrderMap])
 
   // 按章节过滤
+  const curChId = selectedChOrder >= 0 ? chapters?.find(c => c.sortOrder === selectedChOrder)?.id : null
+  const charInCh = useMemo(() => {
+    const s = new Set<string>()
+    if (!curChId) return s // 应不会走这里（已无全部模式）
+    const marker = `[ch:${curChId}]`
+    for (const c of characters) {
+      if (c.importantEvents?.includes(marker)) s.add(c.id)
+    }
+    for (const r of characterRelations || []) {
+      if (r.description?.includes(marker)) { s.add(r.characterId1); s.add(r.characterId2) }
+    }
+    return s
+  }, [characters, characterRelations, curChId])
+
   const nodes = useMemo(() => {
     return rawNodes
-      .filter(n => n.type === 'character' || n.chOrder === selectedChOrder)
+      .filter(n => n.type !== 'character' ? n.chOrder === selectedChOrder : charInCh.has(n.id.replace('char:', '')))
       .map(n => {
         if (n.type !== 'character') return n
         const c = characters.find(ch => `char:${ch.id}` === n.id)

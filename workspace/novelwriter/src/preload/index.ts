@@ -34,6 +34,8 @@ const api = {
   aiChat: (messages: unknown[], options?: unknown) =>
     ipcRenderer.invoke('ai:chat', messages, options),
 
+  aiAbort: () => ipcRenderer.invoke('ai:abort'),
+
   onAiChunk: (callback: (chunk: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, chunk: string): void => callback(chunk)
     ipcRenderer.on('ai:chunk', handler)

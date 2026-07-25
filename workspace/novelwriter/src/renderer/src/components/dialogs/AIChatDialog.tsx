@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown, Copy } from 'lucide-react'
+import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown, Copy, RotateCw, Square } from 'lucide-react'
 import { useAppStore, type Character, type WorldSetting, type Location, type Timeline, type CharacterRelation, type Inspiration, type Reference } from '../../store/app'
 import ModelSelector from '../ModelSelector'
 
@@ -519,6 +519,23 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     doSend(input)
   }
 
+  const handleRegenerate = (): void => {
+    // 找到最后一条 user 消息，重新发送
+    const lastUserIdx = messages.map((m, i) => m.role === 'user' ? i : -1).filter(i => i >= 0).pop()
+    if (lastUserIdx === undefined) return
+    const lastUserMsg = messages[lastUserIdx].content
+    // 移除该 user 消息后的所有 assistant 消息
+    setMessages(prev => prev.slice(0, lastUserIdx + 1))
+    doSend(lastUserMsg)
+  }
+
+  const handleAbort = (): void => {
+    window.api.aiAbort?.()
+    setLoading(false)
+    cleanupRef.current?.()
+    cleanupRef.current = null
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -806,17 +823,29 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
         <div className="flex-1 overflow-auto p-3 space-y-3" style={{ backgroundColor: 'var(--color-surface)' }}>
           {messages.filter(m => m.role !== 'system').map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className="max-w-[80%] rounded-xl px-3 py-2 text-sm leading-relaxed"
-                style={{
-                  backgroundColor: msg.role === 'user' ? 'var(--color-accent)' : 'var(--color-sidebar)',
-                  color: msg.role === 'user' ? 'white' : 'var(--color-text)',
-                  border: msg.role === 'assistant' ? '1px solid var(--color-border-light)' : 'none',
-                }}
-              >
-                {(msg.content || (loading && i === messages.filter(m => m.role !== 'system').length - 1))
-                  ? <FormattedContent content={msg.content || '思考中...'} />
-                  : ''}
+              <div className="max-w-[80%]" style={{ position: 'relative' }}>
+                <div
+                  className="rounded-xl px-3 py-2 text-sm leading-relaxed"
+                  style={{
+                    backgroundColor: msg.role === 'user' ? 'var(--color-accent)' : 'var(--color-sidebar)',
+                    color: msg.role === 'user' ? 'white' : 'var(--color-text)',
+                    border: msg.role === 'assistant' ? '1px solid var(--color-border-light)' : 'none',
+                  }}
+                >
+                  {(msg.content || (loading && i === messages.filter(m => m.role !== 'system').length - 1))
+                    ? <FormattedContent content={msg.content || '思考中...'} />
+                    : ''}
+                </div>
+                {/* 重新生成按钮：AI 回复完毕且非 loading 时显示 */}
+                {msg.role === 'assistant' && !loading && msg.content && !msg.content.startsWith('抱歉') && (
+                  <button onClick={handleRegenerate}
+                    className="flex items-center gap-1 mt-1 text-xs transition-colors"
+                    style={{ color: 'var(--color-text-dim)' }}
+                    onMouseEnter={e => e.currentTarget.style.color = 'var(--color-accent)'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-dim)'}>
+                    <RotateCw size={11} /> 重新生成
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -913,13 +942,20 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
               disabled={loading}
             />
             <button
-              onClick={handleSend}
-              disabled={!input.trim() || loading}
-              className="btn btn-primary flex items-center gap-1.5 h-9"
-              style={{ minWidth: 70 }}
+              onClick={loading ? handleAbort : handleSend}
+              disabled={!loading && (!input.trim() || loading)}
+              className="btn flex items-center gap-1.5 h-9"
+              style={{
+                minWidth: 70,
+                backgroundColor: loading ? 'var(--color-danger)' : 'var(--color-accent)',
+                color: '#fff',
+                border: 'none',
+                cursor: loading || (!loading && input.trim()) ? 'pointer' : 'not-allowed',
+                opacity: !loading && !input.trim() ? 0.5 : 1
+              }}
             >
               {loading ? (
-                <Loader2 size={14} className="animate-spin" />
+                <><Square size={14} /><span>停止</span></>
               ) : (
                 <><Send size={14} /><span>发送</span></>
               )}
