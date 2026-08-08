@@ -2,6 +2,7 @@ import { app, shell } from 'electron'
 import { join, dirname } from 'path'
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, copyFileSync, unlinkSync } from 'fs'
 import { atomicWriteJson } from './atomicWrite'
+import { backupProjectData } from './projectBackup'
 
 // ===================== 类型定义 =====================
 
@@ -280,6 +281,11 @@ function getProjectDataDir(project: Project): string {
   return dir
 }
 
+/** 备份目录：有 path 的项目备份到项目目录下的 .novelwriter-backups，否则放全局 backups/{projectId} */
+function getProjectBackupRoot(project: Project): string {
+  return project.path ? join(project.path, '.novelwriter-backups') : join(APP_DIR, 'backups', project.id)
+}
+
 function getProjectDataDirById(projectId: string): string | null {
   const project = loadProjectById(projectId)
   if (!project) return null
@@ -413,6 +419,11 @@ export function loadChapters(projectId: string): Chapter[] {
     // 旧版把全部章节正文存在 chapters.json 里；迁移为按章独立文件，索引只保留元数据
     const dir = getProjectDataDirById(projectId)
     if (dir) {
+      // 迁移前做一次全量数据快照，迁移失败时可整体回滚
+      const project = loadProjectById(projectId)
+      if (project) {
+        backupProjectData(dir, getProjectBackupRoot(project), 8, true)
+      }
       const contentDir = join(dir, 'chapters')
       ensureDir(contentDir)
       const migrated = items.map(c => {
@@ -720,5 +731,10 @@ export async function initStorage(): Promise<void> {
     } else {
       writeJson(SKILLS_FILE, [])
     }
+  }
+  // 每日自动备份各项目数据目录（同一自然日只备份一次，保留最近 8 份）
+  for (const project of loadProjects()) {
+    const dataDir = project.path ? join(project.path, '.novelwriter') : join(APP_DIR, 'data', project.id)
+    backupProjectData(dataDir, getProjectBackupRoot(project))
   }
 }
