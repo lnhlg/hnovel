@@ -20,7 +20,7 @@ export default function LocationsPanel(): JSX.Element {
     if (currentProject) {
       loadLocations(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadLocations])
 
   const handleSave = async () => {
     if (!currentProject) return

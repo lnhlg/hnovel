@@ -15,7 +15,7 @@ export default function TimelinePanel(): JSX.Element {
     if (currentProject) {
       loadTimelines(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadTimelines])
 
   const handleSave = async () => {
     if (!currentProject) return

@@ -1,13 +1,15 @@
-
-
-
+import { randomUUID } from 'crypto'
+import { existsSync, unlinkSync } from 'fs'
+import { join } from 'path'
 import {
   getCurrentModel,
   setCurrentModel,
   listOpenAIModels,
   listOllamaModels
 } from '../ai'
-import type { AIProvider } from '../fileStorage'
+import { loadProjectById, loadChapters, saveChapter } from '../fileStorage'
+import type { AIProvider, Chapter } from '../fileStorage'
+import { stripChapterTitle, saveChapterMD } from '../markdownStorage'
 
 
 
@@ -109,6 +111,76 @@ function extractCharChanges(outline: string): string[] {
   const field = extractField(outline, '人物变化')
   if (!field) return []
   return field.split('\n').map(line => line.replace(/^- /, '').trim()).filter(Boolean)
+}
+
+/**
+ * 统一保存章节（编辑器 Ctrl+S / 自动保存 / App 保存按钮共用）：
+ * JSON 与 Markdown 同步写入，标题解析、旧文件清理只保留一份逻辑。
+ */
+export function saveChapterWithMd(
+  projectId: string,
+  data: Partial<Chapter> & { projectId: string }
+): Chapter {
+  const time = now()
+  const project = loadProjectById(projectId)
+  const existing = data.id ? loadChapters(projectId).find(c => c.id === data.id) : null
+
+  if (existing) {
+    // 标题解析优先级：正文区域起始的章节标题（如"第1章 惊变"）> preamble H1 > data.title > existing.title
+    let resolvedTitle = existing.title
+    if (data.content) {
+      const bodyTitle = extractTitleFromBodyMD(data.content)
+      if (bodyTitle) {
+        resolvedTitle = bodyTitle
+      } else {
+        const preambleTitle = data.content.match(/^#\s+(.+)/m)?.[1]?.trim()
+        if (preambleTitle) resolvedTitle = preambleTitle
+        else if (data.title) resolvedTitle = data.title
+      }
+    } else if (data.title) {
+      resolvedTitle = data.title
+    }
+    const chapter: Chapter = {
+      ...existing,
+      title: resolvedTitle,
+      content: data.content ?? existing.content,
+      outline: data.outline ?? existing.outline,
+      sortOrder: data.sortOrder ?? existing.sortOrder,
+      wordCount: data.wordCount ?? existing.wordCount,
+      status: data.status ?? existing.status,
+      draftVersion: data.draftVersion ?? existing.draftVersion,
+      updatedAt: time
+    }
+    saveChapter(projectId, chapter)
+
+    // 同步保存到 MD 文件（标题变更时清理旧文件）
+    if (project && project.path) {
+      const oldClean = stripChapterTitle(existing.title)
+      const oldFileName = `${existing.sortOrder + 1}. ${oldClean.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '无标题'}.md`
+      const oldFilePath = join(project.path, '章节', oldFileName)
+      if (existsSync(oldFilePath)) unlinkSync(oldFilePath)
+      saveChapterMD(project.path, chapter, chapter.sortOrder)
+    }
+    return chapter
+  }
+
+  const id = randomUUID()
+  const chapters = loadChapters(projectId)
+  const sortOrder = chapters.length > 0 ? Math.max(...chapters.map(c => c.sortOrder)) + 1 : 0
+  const chapter: Chapter = {
+    id, projectId,
+    title: data.title ?? '未命名章节', content: data.content ?? '',
+    outline: data.outline ?? '', sortOrder,
+    wordCount: data.wordCount ?? 0, status: data.status ?? '草稿',
+    draftVersion: data.draftVersion ?? 1,
+    storyProgressSynced: 0,
+    createdAt: time, updatedAt: time
+  }
+  saveChapter(projectId, chapter)
+  if (project && project.path) {
+    saveChapterMD(project.path, chapter, sortOrder)
+  }
+  return chapter
 }
 
 export { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges }

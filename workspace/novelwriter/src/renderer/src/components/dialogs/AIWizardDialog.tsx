@@ -100,6 +100,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         window.api.wizardEnd?.(sessionIdRef.current).catch(() => {})
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedModel 变化不应重置向导会话
   }, [open])
 
   // 当用户选择了文件夹并进入聊天步骤时，初始化AI会话
@@ -185,7 +186,7 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         break
       }
     }
-  }, [messages.length])
+  }, [messages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })

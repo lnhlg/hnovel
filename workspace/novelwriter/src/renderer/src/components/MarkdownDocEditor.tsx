@@ -46,7 +46,7 @@ export default function MarkdownDocEditor({ doc }: MarkdownDocEditorProps): JSX.
     if (textareaRef.current && doc.content && textareaRef.current.value !== doc.content) {
       textareaRef.current.value = doc.content
     }
-  }, [doc.id])
+  }, [doc.id, doc.content])
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const newContent = e.target.value

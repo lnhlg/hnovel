@@ -9,7 +9,7 @@ export default function WritingLogsPanel(): JSX.Element {
     if (currentProject) {
       loadWritingLogs(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadWritingLogs])
 
   const handleAdd = async () => {
     if (!currentProject || !newLogContent.trim()) return

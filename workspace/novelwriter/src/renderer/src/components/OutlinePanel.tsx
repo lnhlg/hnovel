@@ -48,7 +48,7 @@ function OutlinePanel(): JSX.Element {
     setProjectSynopsis(currentProject?.synopsis ?? '')
     setProjectWorldBg(currentProject?.worldBackground ?? '')
     setProjectDescription(currentProject?.description ?? '')
-  }, [currentProject?.id])
+  }, [currentProject])
 
   // Load storyProgress when project changes
   useEffect(() => {
@@ -56,7 +56,7 @@ function OutlinePanel(): JSX.Element {
     loadStoryProgress(currentProject.id)
     loadWritingStyles()
     loadSkills()
-  }, [currentProject?.id])
+  }, [currentProject?.id, loadStoryProgress, loadWritingStyles, loadSkills])
 
   // Sync storyProgressDraft when storyProgress loads
   useEffect(() => {

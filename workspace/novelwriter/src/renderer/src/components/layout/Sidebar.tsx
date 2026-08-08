@@ -93,7 +93,7 @@ export default function Sidebar(): JSX.Element {
     loadProjects()
     loadWritingStyles()
     loadSkills()
-  }, [])
+  }, [loadProjects, loadWritingStyles, loadSkills])
 
   const handleSelectProject = async (project: typeof currentProject): Promise<void> => {
     if (!project) return

@@ -72,7 +72,7 @@ async function extractFromText(text: string): Promise<RawCharacter[]> {
           parsed = candidate
           break
         }
-      } catch { }
+      } catch { /* ignore */ }
     }
     if (!Array.isArray(parsed) || parsed.length === 0) {
       // 再次请求 AI 只输出 JSON
@@ -86,7 +86,7 @@ async function extractFromText(text: string): Promise<RawCharacter[]> {
           const clean2 = followUp.trim()
           const fence2 = clean2.match(/```(?:json)?\s*([\s\S]*?)```/)
           parsed = JSON.parse(fence2 ? fence2[1].trim() : clean2)
-        } catch { }
+        } catch { /* ignore */ }
       }
     }
   }
@@ -204,7 +204,7 @@ export default function ExtractCharactersDialog({ open, onClose, sourceText, cha
 
     doExtract()
     return () => { cancelledRef.current = true }
-  }, [open, sourceText, chapterContents])
+  }, [open, sourceText, chapterContents, characters])
 
   const toggleChecked = (idx: number) => {
     setExtracted(prev => prev.map((c, i) => i === idx ? { ...c, checked: !c.checked } : c))

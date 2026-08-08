@@ -10,7 +10,7 @@ function WritingStylesPanel(): JSX.Element {
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
-  useEffect(() => { loadWritingStyles() }, [])
+  useEffect(() => { loadWritingStyles() }, [loadWritingStyles])
 
   const sorted = [...writingStyles].sort((a, b) => a.sortOrder - b.sortOrder)
 

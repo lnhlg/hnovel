@@ -10,7 +10,7 @@ function SkillsPanel(): JSX.Element {
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
-  useEffect(() => { loadSkills() }, [])
+  useEffect(() => { loadSkills() }, [loadSkills])
 
   const sorted = [...skills].sort((a, b) => a.sortOrder - b.sortOrder)
 

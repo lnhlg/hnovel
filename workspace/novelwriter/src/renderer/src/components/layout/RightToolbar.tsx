@@ -1,5 +1,5 @@
 import { PenTool, BookOpen, Settings } from 'lucide-react'
-import { useLayoutStore } from '../../store/layout'
+import { useLayoutStore, type DocType } from '../../store/layout'
 import { useAISettingsStore } from '../../store/aiSettings'
 
 const tools = [
@@ -17,7 +17,7 @@ export default function RightToolbar(): JSX.Element {
     }
     openDoc({
       id: `${docType}:${entityId}`,
-      type: docType as any,
+      type: docType as DocType,
       title: label,
       entityId,
       content: '',

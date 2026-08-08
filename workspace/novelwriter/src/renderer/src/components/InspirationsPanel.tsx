@@ -15,7 +15,7 @@ export default function InspirationsPanel(): JSX.Element {
     if (currentProject) {
       loadInspirations(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadInspirations])
 
   const handleSave = async () => {
     if (!currentProject) return

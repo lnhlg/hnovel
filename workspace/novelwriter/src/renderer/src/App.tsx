@@ -99,12 +99,12 @@ function App(): JSX.Element {
     loadConfig()
     // 清理旧版本 persist 括号 bug 遗留在 localStorage 的整仓脏数据（key 为 "undefined"）
     localStorage.removeItem('undefined')
-  }, [])
+  }, [initTheme, loadProjects, loadConfig])
 
   useEffect(() => {
     // 切换项目时关闭旧项目的文档标签，避免跨项目数据串写
     closeAllDocs()
-  }, [currentProject?.id])
+  }, [currentProject?.id, closeAllDocs])
 
   const handleSaveDoc = async (doc: OpenDoc): Promise<void> => {
     if (!currentProject || saving) return
@@ -198,7 +198,7 @@ function App(): JSX.Element {
       loadCharacters(currentProject.id)
       loadCharacterRelations(currentProject.id)
     }
-  }, [activeDoc?.id, currentProject?.id])
+  }, [activeDoc?.id, currentProject?.id, activeDoc, currentProject, loadCharacters, loadCharacterRelations])
 
   const handleOpenCharacterDoc = (characterId: string) => {
     const char = characters.find(c => c.id === characterId)

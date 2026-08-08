@@ -157,7 +157,7 @@ function parseJsonBlocks(content: string): Record<string, unknown>[] | null {
       } else {
         matches.push(parsed)
       }
-    } catch { }
+    } catch { /* ignore */ }
   }
   if (matches.length > 0) return matches
 
@@ -166,7 +166,7 @@ function parseJsonBlocks(content: string): Record<string, unknown>[] | null {
     const parsed = JSON.parse(content.trim())
     if (Array.isArray(parsed)) return parsed
     if (parsed && typeof parsed === 'object') return [parsed]
-  } catch { }
+  } catch { /* ignore */ }
 
   return null
 }
@@ -390,7 +390,8 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     return () => {
       cleanupRef.current?.()
     }
-  }, [open, entityType])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedModel 变化不应重置会话
+  }, [open, entityType, projectId, getExistingList, loadChapters, loadCharacterRelations, loadDialogues, loadItems, loadStoryProgress, loadTimelines])
 
   // 选中变化时同步到全局 store（跨对话框记忆）
   const handleModelChange = useCallback((providerId: string, modelId: string): void => {
@@ -411,11 +412,11 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
   // 将 AI 对话参数持久化到 store
   useEffect(() => {
     if (selectedModel) setChatModel(selectedModel)
-  }, [selectedModel])
+  }, [selectedModel, setChatModel])
 
   useEffect(() => {
     setChatReasoningEffort(reasoningEffort)
-  }, [reasoningEffort])
+  }, [reasoningEffort, setChatReasoningEffort])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })

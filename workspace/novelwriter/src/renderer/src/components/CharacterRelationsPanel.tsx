@@ -15,7 +15,7 @@ export default function CharacterRelationsPanel(): JSX.Element {
       loadCharacterRelations(currentProject.id)
       loadCharacters(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadCharacterRelations, loadCharacters])
 
   const getCharacterName = (id: string) => characters.find(c => c.id === id)?.name || id
 

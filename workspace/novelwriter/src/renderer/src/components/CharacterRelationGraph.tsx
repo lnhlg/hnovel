@@ -27,7 +27,7 @@ export default function CharacterRelationGraph({
   const svgRef = useRef<SVGSVGElement>(null)
   const graphRef = useRef<SVGGElement>(null)
   const nodeElsRef = useRef<Map<string, SVGGElement>>(new Map())
-  const linkElsRef = useRef<Map<string, { line: SVGLineElement; label: SVGGElement }>>(new Map())
+  const linkElsRef = useRef<Map<string, { line: SVGLineElement | null; label: SVGGElement | null }>>(new Map())
 
   const [generating, setGenerating] = useState(false)
 
@@ -392,7 +392,7 @@ export default function CharacterRelationGraph({
                     if (!el) return
                     const m = linkElsRef.current.get(link.id)
                     if (m) m.line = el
-                    else linkElsRef.current.set(link.id, { line: el, label: null as any })
+                    else linkElsRef.current.set(link.id, { line: el, label: null })
                   }}
                   x1={sx}
                   y1={sy}
@@ -407,7 +407,7 @@ export default function CharacterRelationGraph({
                     if (!el) return
                     const m = linkElsRef.current.get(link.id)
                     if (m) m.label = el
-                    else linkElsRef.current.set(link.id, { line: null as any, label: el })
+                    else linkElsRef.current.set(link.id, { line: null, label: el })
                   }}
                   transform={`translate(${mx}, ${my})`}
                 >

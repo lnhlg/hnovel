@@ -256,7 +256,7 @@ export default function MemoryGraph({
         }
         return { ...n, status: latestStatus || n.status }
       })
-  }, [rawNodes, selectedChOrder, characters, chOrderMap])
+  }, [rawNodes, selectedChOrder, characters, chOrderMap, charInCh])
 
   const visibleEdges = useMemo(() => {
     let edges = allEdges.filter(e => showEdges[e.category])
@@ -314,7 +314,7 @@ export default function MemoryGraph({
     dialogues?.forEach(d => check(d.chapterId))
     timelines?.forEach(tl => { const m = tl.description?.match(/\[ch:([^\]]+)\]/); if (m) check(m[1]) })
     if (max > 0) setSelectedChOrder(max)
-  }, [chOrderMap])
+  }, [chOrderMap, worldSettings, characterRelations, items, dialogues, timelines])
 
   useEffect(() => {
     const innerR = Math.min(width, height) * 0.2
@@ -348,6 +348,7 @@ export default function MemoryGraph({
     })
 
     setNodePosMap(newMap)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nodePosMap 是本 effect 的产物，加入依赖会造成循环
   }, [nodes, width, height, centerX, centerY, posLoaded])
 
   const updateNodePos = (id: string, x: number, y: number) => {
@@ -685,14 +686,17 @@ export default function MemoryGraph({
   }, [visibleEdges])
 
   const sorter = useMemo(() => chIdSort(chapters || []), [chapters])
-  const chSort = (a: { description?: string | null }, b: { description?: string | null }) => {
-    const ma = a.description?.match(/\[ch:([^\]]+)\]/); const oa = ma ? (chOrderMap.get(ma[1]) ?? 999) : 999
-    const mb = b.description?.match(/\[ch:([^\]]+)\]/); const ob = mb ? (chOrderMap.get(mb[1]) ?? 999) : 999
-    if (oa !== ob) return oa - ob
-    const sa = parseInt(a.description?.match(/\[seq:(\d+)\]/)?.[1] ?? '999', 10)
-    const sb = parseInt(b.description?.match(/\[seq:(\d+)\]/)?.[1] ?? '999', 10)
-    return sa - sb
-  }
+  const chSort = useCallback(
+    (a: { description?: string | null }, b: { description?: string | null }) => {
+      const ma = a.description?.match(/\[ch:([^\]]+)\]/); const oa = ma ? (chOrderMap.get(ma[1]) ?? 999) : 999
+      const mb = b.description?.match(/\[ch:([^\]]+)\]/); const ob = mb ? (chOrderMap.get(mb[1]) ?? 999) : 999
+      if (oa !== ob) return oa - ob
+      const sa = parseInt(a.description?.match(/\[seq:(\d+)\]/)?.[1] ?? '999', 10)
+      const sb = parseInt(b.description?.match(/\[seq:(\d+)\]/)?.[1] ?? '999', 10)
+      return sa - sb
+    },
+    [chOrderMap]
+  )
   const extractedDialogues = useMemo(() =>
     (dialogues || []).sort((a, b) => {
       const oa = chOrderMap.get(a.chapterId) ?? 999
@@ -704,16 +708,16 @@ export default function MemoryGraph({
   )
   const extractedLocs = useMemo(() =>
     (locations || []).sort(chSort),
-    [locations, chOrderMap]
+    [locations, chSort]
   )
   const extractedEvents = useMemo(() =>
     (timelines || []).sort(chSort),
-    [timelines, chOrderMap]
+    [timelines, chSort]
   )
 
   const hasGraphContent = nodes.length > 0
 
-  const renderTable = (title: string, icon: React.ReactNode, color: string, columns: { key: string; label: string }[], rows: any[]) => (
+  const renderTable = (title: string, icon: React.ReactNode, color: string, columns: { key: string; label: string }[], rows: { id?: string; [k: string]: unknown }[]) => (
     <div style={{ padding: 12, overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
         {icon}
@@ -740,7 +744,7 @@ export default function MemoryGraph({
               <tr key={row.id || i}>
                 {columns.map(col => (
                   <td key={col.key} style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)', color: 'var(--color-text)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {row[col.key] || '-'}
+                    {String(row[col.key] ?? '-')}
                   </td>
                 ))}
               </tr>

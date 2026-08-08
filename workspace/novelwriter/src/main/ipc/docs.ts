@@ -1,8 +1,6 @@
 import { ipcMain } from 'electron'
-import { existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
 import { saveProject, loadProjectById,
-  loadChapters, saveChapter,
+  loadChapters,
   loadCharacters, saveCharacter,
   loadWorldSettings, saveWorldSetting,
   loadTimelines,
@@ -33,7 +31,6 @@ import {
   readCharacterContent,
   writeCharacterContent,
   readChapterContent,
-  writeChapterContent,
   readWorldSettingContent,
   writeWorldSettingContent,
   readLocationContent,
@@ -55,10 +52,9 @@ import {
   writeLocationsContent,
   parseCharactersFromMD,
   parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle
+  parseLocationsFromMD
 } from '../markdownStorage'
-import { now, extractTitleFromBody } from './helpers'
+import { now, extractTitleFromBody, saveChapterWithMd } from './helpers'
 import { parseCharacterFromContent } from './assets'
 
 
@@ -235,7 +231,6 @@ export function registerDocHandlers(): void {
         const chapters = loadChapters(projectId).sort((a, b) => a.sortOrder - b.sortOrder)
         const chapter = chapters.find(c => c.id === entityId)
         if (!chapter) return { success: false }
-        const index = chapters.findIndex((c) => c.id === entityId)
 
         const titleMatch = content.match(/^#\s+(.+)/m)
         const outlineMatch = content.match(/## 本章概要\r?\n([\s\S]*?)(?=\r?\n## |\r?\n$)/)
@@ -255,23 +250,16 @@ export function registerDocHandlers(): void {
         if (bodyTitle) rawTitle = bodyTitle
         const newTitle = rawTitle
 
-        const oldTitle = stripChapterTitle(chapter.title)
-        const oldFileName = `${index + 1}. ${oldTitle.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '无标题'}.md`
-        const newFileName = `${index + 1}. ${newTitle.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '无标题'}.md`
-        if (oldFileName !== newFileName) {
-          const oldPath = join(projectPath, '章节', oldFileName)
-          if (existsSync(oldPath)) unlinkSync(oldPath)
-        }
-
-        writeChapterContent(projectPath, index, newTitle, content)
-
-        chapter.title = newTitle
-        chapter.content = newContent
-        chapter.outline = newOutline
-        chapter.wordCount = newContent.length
-        chapter.updatedAt = time
-        saveChapter(projectId, chapter)
-        return { success: true, newTitle }
+        // 与编辑器保存共用同一套写入逻辑：JSON + 标准格式 MD 同步落盘
+        const saved = saveChapterWithMd(projectId, {
+          id: entityId,
+          projectId,
+          title: newTitle,
+          content,
+          outline: newOutline,
+          wordCount: newContent.length
+        })
+        return { success: true, newTitle: saved.title }
       }
       case 'character': {
         const character = loadCharacters(projectId).find(c => c.id === entityId)

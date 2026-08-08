@@ -15,7 +15,7 @@ export default function ReferencesPanel(): JSX.Element {
     if (currentProject) {
       loadReferences(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadReferences])
 
   const handleSave = async () => {
     if (!currentProject) return

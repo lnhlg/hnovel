@@ -20,7 +20,7 @@ export default function WorldSettingsPanel(): JSX.Element {
     if (currentProject) {
       loadWorldSettings(currentProject.id)
     }
-  }, [currentProject?.id])
+  }, [currentProject, loadWorldSettings])
 
   const handleSave = async () => {
     if (!currentProject) return

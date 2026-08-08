@@ -111,27 +111,27 @@ function parseAIResponse(raw: string): MemoryData {
     const parsed = JSON.parse(clean)
     if (parsed && typeof parsed === 'object') {
       return {
-        characters: Array.isArray(parsed.characters) ? parsed.characters.filter((c: any) => c?.name) : [],
-        items: Array.isArray(parsed.items) ? parsed.items.filter((i: any) => i?.name) : [],
-        organizations: Array.isArray(parsed.organizations) ? parsed.organizations.filter((o: any) => o?.name) : [],
-        relationships: Array.isArray(parsed.relationships) ? parsed.relationships.filter((r: any) => r?.character1 && r?.character2) : [],
-        characterItems: Array.isArray(parsed.characterItems) ? parsed.characterItems.filter((ci: any) => ci?.character && ci?.item) : [],
-        characterOrgs: Array.isArray(parsed.characterOrgs) ? parsed.characterOrgs.filter((co: any) => co?.character && co?.organization) : [],
-        dialogues: Array.isArray(parsed.dialogues) ? parsed.dialogues.filter((d: any) => d?.speaker && d?.content) : [],
-        locations: Array.isArray(parsed.locations) ? parsed.locations.filter((l: any) => l?.name) : [],
-        events: Array.isArray(parsed.events) ? parsed.events.filter((e: any) => e?.name) : []
+        characters: Array.isArray(parsed.characters) ? parsed.characters.filter((c: { name?: unknown }) => c?.name) : [],
+        items: Array.isArray(parsed.items) ? parsed.items.filter((i: { name?: unknown }) => i?.name) : [],
+        organizations: Array.isArray(parsed.organizations) ? parsed.organizations.filter((o: { name?: unknown }) => o?.name) : [],
+        relationships: Array.isArray(parsed.relationships) ? parsed.relationships.filter((r: { character1?: unknown; character2?: unknown }) => r?.character1 && r?.character2) : [],
+        characterItems: Array.isArray(parsed.characterItems) ? parsed.characterItems.filter((ci: { character?: unknown; item?: unknown }) => ci?.character && ci?.item) : [],
+        characterOrgs: Array.isArray(parsed.characterOrgs) ? parsed.characterOrgs.filter((co: { character?: unknown; organization?: unknown }) => co?.character && co?.organization) : [],
+        dialogues: Array.isArray(parsed.dialogues) ? parsed.dialogues.filter((d: { speaker?: unknown; content?: unknown }) => d?.speaker && d?.content) : [],
+        locations: Array.isArray(parsed.locations) ? parsed.locations.filter((l: { name?: unknown }) => l?.name) : [],
+        events: Array.isArray(parsed.events) ? parsed.events.filter((e: { name?: unknown }) => e?.name) : []
       }
     }
-  } catch {}
+  } catch { /* ignore */ }
 
   const arrMatch = clean.match(/\[\s*\{[\s\S]+?\}\s*\]/)
   if (arrMatch) {
     try {
       const arr = JSON.parse(arrMatch[0])
       if (Array.isArray(arr) && arr.length > 0 && arr[0].name) {
-        return { ...empty, characters: arr.filter((c: any) => c?.name) }
+        return { ...empty, characters: arr.filter((c: { name?: unknown }) => c?.name) }
       }
-    } catch {}
+    } catch { /* ignore */ }
   }
 
   return empty
@@ -271,7 +271,7 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
     })
   }
 
-  const toggleAll = (section: string, arr: any[]) => {
+  const toggleAll = (section: string, arr: unknown[]) => {
     setChecked(prev => {
       const current = prev[section] || new Set()
       const allSelected = current.size === arr.length
@@ -469,25 +469,47 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
     ? (Object.keys(sectionConfig) as (keyof MemoryData)[]).filter(k => Array.isArray(data[k]) && data[k].length > 0)
     : []
 
-  const renderFields = (item: any) => {
+  const renderFields = (item: Record<string, unknown>) => {
     const fields: string[] = []
-    if (item.description) fields.push(item.description)
-    if (item.appearance) fields.push(`外貌: ${item.appearance}`)
-    if (item.clothing) fields.push(`服饰: ${item.clothing}`)
-    if (item.content) fields.push(`"${item.content.slice(0, 40)}${item.content.length > 40 ? '...' : ''}"`)
-    if (item.context) fields.push(`场景: ${item.context}`)
-    if (item.with) fields.push(`对话对象: ${item.with}`)
-    if (item.status) fields.push(`状态: ${item.status}`)
-    if (item.owner) fields.push(`持有者: ${item.owner}`)
-    if (item.time) fields.push(`时间: ${item.time}`)
-    if (item.location) fields.push(`地点: ${item.location}`)
-    if (item.relation) fields.push(`关系: ${item.relation}`)
-    if (item.character1 && item.character2) fields.push(`${item.character1} ↔ ${item.character2}${item.relation ? ` (${item.relation})` : ''}`)
-    if (item.character && item.item) fields.push(`${item.character} → ${item.item}${item.relation ? ` (${item.relation})` : ''}`)
-    if (item.character && item.organization) fields.push(`${item.character} ∈ ${item.organization}${item.relation ? ` (${item.relation})` : ''}`)
-    if (item.participants?.length) fields.push(`参与者: ${item.participants.join(', ')}`)
-    if (item.type) fields.push(`类型: ${item.type}`)
-    if (item.personality) fields.push(`性格: ${item.personality}`)
+    const s = (v: unknown): string => (typeof v === 'string' ? v : '')
+    const desc = s(item.description)
+    if (desc) fields.push(desc)
+    const appearance = s(item.appearance)
+    if (appearance) fields.push(`外貌: ${appearance}`)
+    const clothing = s(item.clothing)
+    if (clothing) fields.push(`服饰: ${clothing}`)
+    const content = s(item.content)
+    if (content) fields.push(`"${content.slice(0, 40)}${content.length > 40 ? '...' : ''}"`)
+    const context = s(item.context)
+    if (context) fields.push(`场景: ${context}`)
+    const withName = s(item.with)
+    if (withName) fields.push(`对话对象: ${withName}`)
+    const status = s(item.status)
+    if (status) fields.push(`状态: ${status}`)
+    const owner = s(item.owner)
+    if (owner) fields.push(`持有者: ${owner}`)
+    const time = s(item.time)
+    if (time) fields.push(`时间: ${time}`)
+    const location = s(item.location)
+    if (location) fields.push(`地点: ${location}`)
+    const relation = s(item.relation)
+    if (relation) fields.push(`关系: ${relation}`)
+    const char1 = s(item.character1)
+    const char2 = s(item.character2)
+    if (char1 && char2) fields.push(`${char1} ↔ ${char2}${relation ? ` (${relation})` : ''}`)
+    const character = s(item.character)
+    const itemName = s(item.item)
+    if (character && itemName) fields.push(`${character} → ${itemName}${relation ? ` (${relation})` : ''}`)
+    const organization = s(item.organization)
+    if (character && organization) fields.push(`${character} ∈ ${organization}${relation ? ` (${relation})` : ''}`)
+    if (Array.isArray(item.participants)) {
+      const participants = item.participants.filter((p): p is string => typeof p === 'string')
+      if (participants.length > 0) fields.push(`参与者: ${participants.join(', ')}`)
+    }
+    const type = s(item.type)
+    if (type) fields.push(`类型: ${type}`)
+    const personality = s(item.personality)
+    if (personality) fields.push(`性格: ${personality}`)
     return fields
   }
 
@@ -579,7 +601,7 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
               </div>
 
               {sectionKeys.map(key => {
-                const items = data[key] as any[]
+                const items = data[key] as unknown as Array<Record<string, unknown>>
                 const cfg = sectionConfig[key]
                 const color = cfg?.color || '#666'
                 return (
@@ -610,7 +632,7 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
 
                     {!collapsed[key] && (
                       <div className="divide-y" style={{ borderColor: 'var(--color-border-light)' }}>
-                        {items.map((item: any, idx: number) => (
+                        {items.map((item: Record<string, unknown>, idx: number) => (
                           <label
                             key={idx}
                             className="flex items-start gap-2 px-3 py-2 cursor-pointer transition-colors"
@@ -625,7 +647,7 @@ JSON 结构如下（每个分类都是数组，无数据则返回空数组 []）
                             />
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                                {item.name || item.character || ''}
+                                {String(item.name ?? item.character ?? '')}
                               </div>
                               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                                 {renderFields(item).map((f, fi) => (

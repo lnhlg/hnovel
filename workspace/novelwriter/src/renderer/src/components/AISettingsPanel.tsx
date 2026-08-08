@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useCallback, useState, useEffect } from 'react'
 import { RefreshCw, Plus, Trash2, Check, Edit2, X, CheckCircle2, Wifi, WifiOff } from 'lucide-react'
 import { useAISettingsStore } from '../store/aiSettings'
 
@@ -55,7 +55,7 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
     }
   }
 
-  const loadModels = async (providerId?: string): Promise<void> => {
+  const loadModels = useCallback(async (providerId?: string): Promise<void> => {
     setLoadingModels(true)
     setModelError('')
     try {
@@ -72,7 +72,7 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
     } finally {
       setLoadingModels(false)
     }
-  }
+  }, [])
 
   const testConnection = async (): Promise<void> => {
     if (!editingProvider?.baseUrl?.trim()) {
@@ -106,12 +106,13 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
     loadCurrentConfig()
   }, [])
 
+  const activeProviderId = providers.find(p => p.isActive === 1)?.id
   useEffect(() => {
     const activeProvider = providers.find(p => p.isActive === 1)
     if (activeProvider) {
       loadModels(activeProvider.id)
     }
-  }, [providers.find(p => p.isActive === 1)?.id])
+  }, [activeProviderId, loadModels, providers])
 
   const handleSetActive = async (providerId: string): Promise<void> => {
     await window.api.setActiveProvider?.(providerId)

@@ -251,8 +251,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         }
         setPolishHistory(filtered)
       }
-    } catch {}
-  }, [])
+    } catch { /* ignore */ }
+  }, [skills])
 
   // 正文编辑器撤销/重做
   const mainUndoStack = useRef<{ text: string; tab: 'outline' | 'content' }[]>([])
