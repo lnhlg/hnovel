@@ -160,6 +160,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const contentSyncRafRef = useRef<number | null>(null)
   const saveDocRef = useRef<(() => void) | null>(null)
+  // 是否有未保存的修改；卸载前只在这种状态下刷盘，避免内容未加载完成时用空文档覆盖章节
+  const dirtyRef = useRef(false)
   // 记录文档打开时的项目，卸载前刷盘时确保写回正确的项目
   const projectIdRef = useRef(currentProject?.id ?? '')
 
@@ -288,6 +290,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           if (content) {
             setDocContent(doc.id, content)
             setDocDirty(doc.id, false)
+            dirtyRef.current = false
           }
         } catch (err) {
           console.error('加载章节内容失败:', err)
@@ -395,6 +398,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         }))
       }
       setDocDirty(doc.id, false)
+      dirtyRef.current = false
     }).catch(console.error)
   }, [doc.entityId, doc.id, loadChapters, setDocContent, setDocDirty, setDocTitle])
 
@@ -414,7 +418,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         cancelAnimationFrame(contentSyncRafRef.current)
         contentSyncRafRef.current = null
       }
-      saveDocRef.current?.()
+      if (dirtyRef.current) saveDocRef.current?.()
     }
   }, [])
 
@@ -457,6 +461,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
     // 标记未保存，节流同步到 layout store（避免每次击键触发全局重渲染）
     setDocDirty(doc.id, true)
+    dirtyRef.current = true
     if (contentSyncRafRef.current !== null) cancelAnimationFrame(contentSyncRafRef.current)
     contentSyncRafRef.current = requestAnimationFrame(() => {
       contentSyncRafRef.current = null
@@ -479,6 +484,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     setDocContent(doc.id, full)
     setDocTitle(doc.id, v)
     setDocDirty(doc.id, true)
+    dirtyRef.current = true
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = setTimeout(() => {
       autosaveTimerRef.current = null
@@ -662,6 +668,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
       setDocContent(doc.id, full)
       setDocDirty(doc.id, true)
+      dirtyRef.current = true
       if (subTab === target && textareaRef.current) {
         textareaRef.current.value = contentToUse
       } else {
@@ -707,6 +714,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
       setDocContent(doc.id, full)
       setDocDirty(doc.id, true)
+      dirtyRef.current = true
       setSubTab('outline')
       if (textareaRef.current) {
         textareaRef.current.value = outline
