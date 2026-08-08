@@ -609,24 +609,4 @@ export function registerAIHandlers(): void {
     abortRequest(requestId)
     return { success: true }
   })
-  ipcMain.handle('ai:chatWithProvider', async (_event, providerId: string, model: string, messages: ChatMessage[], options?: { stream?: boolean; sessionId?: string }) => {
-    const provider = loadAIProviders().find(p => p.id === providerId)
-    if (!provider) {
-      throw new Error('供应商不存在')
-    }
-
-    const window = BrowserWindow.getFocusedWindow()
-    const sendChunk = options?.sessionId && window
-      ? (chunk: string) => window.webContents.send('wizard:chunk', options.sessionId, chunk)
-      : (options?.stream && window ? (chunk: string) => window.webContents.send('ai:chunk', chunk) : () => {})
-
-    if (provider.type === 'ollama') {
-      return await chatOllama(provider, model, messages, options?.stream ? sendChunk : undefined)
-    } else {
-      if (options?.stream) {
-        return await chatOpenAIStream(provider, model, messages, sendChunk)
-      }
-      return await chatOpenAI(provider, model, messages)
-    }
-  })
 }

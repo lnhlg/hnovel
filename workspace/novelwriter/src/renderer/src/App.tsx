@@ -98,12 +98,13 @@ function App(): JSX.Element {
     initTheme()
     loadProjects()
     loadConfig()
+    // 清理旧版本 persist 括号 bug 遗留在 localStorage 的整仓脏数据（key 为 "undefined"）
+    localStorage.removeItem('undefined')
   }, [])
 
   useEffect(() => {
-    if (!currentProject) {
-      closeAllDocs()
-    }
+    // 切换项目时关闭旧项目的文档标签，避免跨项目数据串写
+    closeAllDocs()
   }, [currentProject?.id])
 
   const handleSaveDoc = async (doc: OpenDoc): Promise<void> => {

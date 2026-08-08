@@ -156,6 +156,12 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [searchSbw, setSearchSbw] = useState(0)
   const searchMatches = useRef<number[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
+  // 防抖自动保存 / 击键节流 / 卸载前刷盘
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const contentSyncRafRef = useRef<number | null>(null)
+  const saveDocRef = useRef<(() => void) | null>(null)
+  // 记录文档打开时的项目，卸载前刷盘时确保写回正确的项目
+  const projectIdRef = useRef(currentProject?.id ?? '')
 
   // Ctrl+F 搜索
   useEffect(() => {
@@ -348,44 +354,81 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     requestAnimationFrame(() => requestAnimationFrame(restoreScroll))
   }, [loading, doc.id, restoreScroll])
 
+  // 文档挂载时固定所属项目（切换项目后旧文档卸载，仍能写回原项目）
+  useEffect(() => {
+    projectIdRef.current = currentProject?.id ?? ''
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id])
+
+  // 保存当前文档（Ctrl+S / 防抖自动保存 / 卸载前刷盘共用）
+  const saveDocNow = useCallback((): void => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+    const pid = projectIdRef.current
+    if (!pid) return
+    // 保存前：若正文开头有章节标题（如"第1章 惊变"），同步到 preamble H1 和标题输入框，
+    // 确保 JSON 中 chapter.content 与 MD 文件、侧栏三者标题一致，避免重载后回退
+    const bodyTitle = extractTitleFromBody(contentRef.current)
+    if (bodyTitle) {
+      preambleRef.current = replaceTitleInPreamble(preambleRef.current, bodyTitle)
+      titleRef.current = bodyTitle
+      setTitle(bodyTitle)
+      setDocTitle(doc.id, bodyTitle)
+    }
+    const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+    setDocContent(doc.id, full)
+    window.api.saveChapter({
+      id: doc.entityId,
+      projectId: pid,
+      title: titleRef.current,
+      content: full,
+      outline: outlineRef.current
+    }).then(async () => {
+      await loadChapters(pid)
+      // 强制更新侧栏（用同步后的标题），在 loadChapters 之后执行
+      // 确保即使后端 JSON 中 title 未正确更新，侧栏也显示正文标题
+      if (bodyTitle) {
+        useAppStore.setState(state => ({
+          chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: bodyTitle } : c)
+        }))
+      }
+      setDocDirty(doc.id, false)
+    }).catch(console.error)
+  }, [doc.entityId, doc.id, loadChapters, setDocContent, setDocDirty, setDocTitle])
+
+  // 始终让 saveDocRef 指向最新的保存函数，供卸载前刷盘使用
+  useEffect(() => {
+    saveDocRef.current = saveDocNow
+  }, [saveDocNow])
+
+  // 卸载前：取消待执行的自动保存/节流帧，并把未保存的改动立即落盘
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+      if (contentSyncRafRef.current !== null) {
+        cancelAnimationFrame(contentSyncRafRef.current)
+        contentSyncRafRef.current = null
+      }
+      saveDocRef.current?.()
+    }
+  }, [])
+
   // Ctrl+S 保存
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
-        // 保存前：若正文开头有章节标题（如"第1章 惊变"），同步到 preamble H1 和标题输入框，
-        // 确保 JSON 中 chapter.content 与 MD 文件、侧栏三者标题一致，避免重载后回退
-        const bodyTitle = extractTitleFromBody(contentRef.current)
-        if (bodyTitle) {
-          preambleRef.current = replaceTitleInPreamble(preambleRef.current, bodyTitle)
-          titleRef.current = bodyTitle
-          setTitle(bodyTitle)
-          setDocTitle(doc.id, bodyTitle)
-        }
-        const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
-        setDocContent(doc.id, full)
-        window.api.saveChapter({
-          id: doc.entityId,
-          projectId: currentProject?.id ?? '',
-          title: titleRef.current,
-          content: full,
-          outline: outlineRef.current
-        }).then(async () => {
-          if (currentProject) await loadChapters(currentProject.id)
-          // 强制更新侧栏（用同步后的标题），在 loadChapters 之后执行
-          // 确保即使后端 JSON 中 title 未正确更新，侧栏也显示正文标题
-          if (bodyTitle) {
-            useAppStore.setState(state => ({
-              chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: bodyTitle } : c)
-            }))
-          }
-          setDocDirty(doc.id, false)
-        }).catch(console.error)
+        saveDocNow()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentProject, doc.entityId, doc.id])
+  }, [saveDocNow])
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const v = e.target.value
@@ -412,7 +455,19 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       }
     }
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
-    setDocContent(doc.id, full)
+    // 标记未保存，节流同步到 layout store（避免每次击键触发全局重渲染）
+    setDocDirty(doc.id, true)
+    if (contentSyncRafRef.current !== null) cancelAnimationFrame(contentSyncRafRef.current)
+    contentSyncRafRef.current = requestAnimationFrame(() => {
+      contentSyncRafRef.current = null
+      setDocContent(doc.id, full)
+    })
+    // 防抖自动保存：停止输入 2.5 秒后落盘
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null
+      saveDocNow()
+    }, 2500)
   }
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -423,6 +478,12 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
     setDocContent(doc.id, full)
     setDocTitle(doc.id, v)
+    setDocDirty(doc.id, true)
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null
+      saveDocNow()
+    }, 2500)
     // 立即更新侧栏章节标题
     useAppStore.setState(state => ({
       chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: v } : c)

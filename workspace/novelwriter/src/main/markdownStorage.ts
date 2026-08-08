@@ -1,6 +1,12 @@
 import { join } from 'path'
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'fs'
+import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'fs'
+import { atomicWriteFile } from './atomicWrite'
 import type { Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference } from './fileStorage'
+
+// Markdown 写入统一走原子写（临时文件 + rename），避免进程中断时写坏原文
+function writeFileSync(path: string, content: string, _encoding?: string): void {
+  atomicWriteFile(path, content)
+}
 
 // 目录结构
 const DIRS = {

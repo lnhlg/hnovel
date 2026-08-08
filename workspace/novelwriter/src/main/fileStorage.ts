@@ -1,6 +1,7 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import { join, dirname } from 'path'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, copyFileSync, renameSync, unlinkSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, copyFileSync, unlinkSync } from 'fs'
+import { atomicWriteJson } from './atomicWrite'
 
 // ===================== 类型定义 =====================
 
@@ -226,6 +227,19 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 }
 
+// 清理原子写入崩溃残留的临时文件（*.tmp），仅限启动阶段调用
+function cleanupTmpFiles(dir: string): void {
+  if (!existsSync(dir)) return
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      cleanupTmpFiles(full)
+    } else if (entry.isFile() && entry.name.endsWith('.tmp')) {
+      try { unlinkSync(full) } catch { /* ignore */ }
+    }
+  }
+}
+
 // 记录本进程内已备份过的损坏文件，避免重复备份刷屏
 const backedUpCorruptFiles = new Set<string>()
 
@@ -250,19 +264,8 @@ function readJson<T>(path: string): T | undefined {
   }
 }
 
-// 原子写入：先写临时文件再重命名，避免进程中断时写坏原文件
 function writeJson(path: string, data: unknown): void {
-  ensureDir(dirname(path))
-  const tmpPath = `${path}.${Date.now()}.tmp`
-  try {
-    writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
-    renameSync(tmpPath, path)
-  } catch (err) {
-    try {
-      if (existsSync(tmpPath)) unlinkSync(tmpPath)
-    } catch { /* ignore */ }
-    throw err
-  }
+  atomicWriteJson(path, data)
 }
 
 /** 获取项目数据目录：有 path 用项目目录，否则用全局目录 */
@@ -373,13 +376,18 @@ export function saveProject(project: Project): Project {
   return project
 }
 
-export function deleteProject(id: string): void {
+export async function deleteProject(id: string): Promise<void> {
   const project = loadProjectById(id)
   if (project) {
     // 删除项目数据目录
     const dataDir = getProjectDataDir(project)
     if (existsSync(dataDir)) {
-      try { rmSync(dataDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      try {
+        // 优先移入系统回收站，误删可恢复；失败时退回直接删除
+        await shell.trashItem(dataDir)
+      } catch {
+        try { rmSync(dataDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      }
     }
   }
   saveProjects(loadProjects().filter(p => p.id !== id))
@@ -387,16 +395,64 @@ export function deleteProject(id: string): void {
 
 // ===================== 实体操作 =====================
 
+function chapterContentPath(projectId: string, chapterId: string): string | null {
+  const dir = getProjectDataDirById(projectId)
+  return dir ? join(dir, 'chapters', `${chapterId}.json`) : null
+}
+
+function readChapterContentFile(projectId: string, chapterId: string): string {
+  const path = chapterContentPath(projectId, chapterId)
+  if (!path || !existsSync(path)) return ''
+  return readJson<{ content?: string }>(path)?.content ?? ''
+}
+
 export function loadChapters(projectId: string): Chapter[] {
-  return storeFor<Chapter>(projectId, 'chapters.json').load()
+  const items = storeFor<Chapter>(projectId, 'chapters.json').load()
+  const needsMigration = items.some(c => c.content)
+  if (needsMigration) {
+    // 旧版把全部章节正文存在 chapters.json 里；迁移为按章独立文件，索引只保留元数据
+    const dir = getProjectDataDirById(projectId)
+    if (dir) {
+      const contentDir = join(dir, 'chapters')
+      ensureDir(contentDir)
+      const migrated = items.map(c => {
+        if (c.content) {
+          writeJson(join(contentDir, `${c.id}.json`), { content: c.content })
+          return { ...c, content: '' }
+        }
+        return c
+      })
+      const indexPath = entityPath(projectId, 'chapters.json')
+      if (indexPath && existsSync(indexPath)) {
+        try {
+          copyFileSync(indexPath, `${indexPath}.migrated-${Date.now()}.bak`)
+        } catch { /* ignore */ }
+      }
+      writeJson(join(dir, 'chapters.json'), migrated)
+      return migrated.map(c => ({ ...c, content: readChapterContentFile(projectId, c.id) }))
+    }
+  }
+  return items.map(c => ({ ...c, content: readChapterContentFile(projectId, c.id) }))
 }
 
 export function saveChapter(projectId: string, chapter: Chapter): Chapter {
-  return storeFor<Chapter>(projectId, 'chapters.json').upsert(chapter)
+  const content = chapter.content ?? ''
+  // 先写正文文件，再更新索引（索引只存元数据，避免每次保存都重写全量章节正文）
+  const path = chapterContentPath(projectId, chapter.id)
+  if (path) {
+    ensureDir(dirname(path))
+    writeJson(path, { content })
+  }
+  const saved = storeFor<Chapter>(projectId, 'chapters.json').upsert({ ...chapter, content: '' })
+  return { ...saved, content }
 }
 
 export function deleteChapter(projectId: string, id: string): void {
   storeFor<Chapter>(projectId, 'chapters.json').delete(id)
+  const path = chapterContentPath(projectId, id)
+  if (path && existsSync(path)) {
+    try { unlinkSync(path) } catch { /* ignore */ }
+  }
 }
 
 export function loadCharacters(projectId: string): Character[] {
@@ -641,6 +697,11 @@ export function deleteAIProvider(id: string): void {
 
 export async function initStorage(): Promise<void> {
   ensureDir(APP_DIR)
+  // 清理原子写入崩溃残留的临时文件
+  cleanupTmpFiles(APP_DIR)
+  for (const project of loadProjects()) {
+    if (project.path) cleanupTmpFiles(join(project.path, '.novelwriter'))
+  }
   // 确保全局文件存在
   if (!existsSync(PROJECTS_FILE)) writeJson(PROJECTS_FILE, [])
   if (!existsSync(AI_PROVIDERS_FILE)) writeJson(AI_PROVIDERS_FILE, [])

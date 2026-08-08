@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initStorage } from './fileStorage'
-import { registerProjectHandlers, registerChapterHandlers, registerCharacterHandlers, registerDialogHandlers, registerAIOutineHandlers, registerAIWizardHandlers, registerWorldSettingsHandlers, registerTimelineHandlers, registerLocationHandlers, registerItemHandlers, registerDialogueHandlers, registerCharacterRelationHandlers, registerInspirationHandlers, registerWritingLogHandlers, registerReferenceHandlers, registerAIAssetHandlers, registerDocHandlers, registerWritingStyleHandlers, registerSkillHandlers } from './ipc'
+import { registerProjectHandlers, registerChapterHandlers, registerCharacterHandlers, registerDialogHandlers, registerAIOutlineHandlers, registerAIWizardHandlers, registerWorldSettingsHandlers, registerTimelineHandlers, registerLocationHandlers, registerItemHandlers, registerDialogueHandlers, registerCharacterRelationHandlers, registerInspirationHandlers, registerWritingLogHandlers, registerReferenceHandlers, registerAIAssetHandlers, registerDocHandlers, registerWritingStyleHandlers, registerSkillHandlers } from './ipc'
 import { registerAIHandlers, loadActiveProvider } from './ai'
 
 function createWindow(): void {
@@ -58,7 +58,7 @@ app.whenReady().then(async () => {
   registerReferenceHandlers()
   registerWritingStyleHandlers()
   registerSkillHandlers()
-  registerAIOutineHandlers()
+  registerAIOutlineHandlers()
   registerDialogHandlers()
   registerAIHandlers()
   registerAIWizardHandlers()
