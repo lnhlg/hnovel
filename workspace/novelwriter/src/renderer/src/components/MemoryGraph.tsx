@@ -1142,7 +1142,7 @@ export default function MemoryGraph({
                   {rows.map((row, i) => (
                     <tr key={row.id || i}>
                       {cols.map(col => (
-                        <td key={col.key} style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)', color: 'var(--color-text)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row[col.key] || '-'}</td>
+                        <td key={col.key} style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)', color: 'var(--color-text)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(row as Record<string, string>)[col.key] || '-'}</td>
                       ))}
                       <td style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)' }}>
                         <button onClick={async () => {
@@ -1196,7 +1196,7 @@ export default function MemoryGraph({
                   {rows.map((row, i) => (
                     <tr key={row.id || i}>
                       {cols.map(col => (
-                        <td key={col.key} style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)', color: 'var(--color-text)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row[col.key] || '-'}</td>
+                        <td key={col.key} style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)', color: 'var(--color-text)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(row as Record<string, string>)[col.key] || '-'}</td>
                       ))}
                       <td style={{ padding: '3px 6px', borderBottom: '1px solid var(--color-border-light)' }}>
                         <button onClick={async () => {

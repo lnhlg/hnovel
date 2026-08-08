@@ -73,6 +73,11 @@ export interface WorldSetting {
   key: string
   value: string
   description: string
+  rules: string
+  relatedSettings: string
+  plotImpact: string
+  limitations: string
+  examples: string
   createdAt: string
   updatedAt: string
 }
@@ -84,6 +89,7 @@ export interface Timeline {
   description: string
   date: string
   sortOrder: number
+  chapterId: string
   createdAt: string
   updatedAt: string
 }
@@ -750,7 +756,7 @@ export const useAppStore = create<AppState>()(
     set({ storyProgress: text })
     return text
   }
-})),
+}),
   {
     name: 'novelwriter-chat-prefs',
     partialize: (state) => ({
@@ -759,4 +765,4 @@ export const useAppStore = create<AppState>()(
       chatReasoningEffort: state.chatReasoningEffort
     })
   }
-)
+))

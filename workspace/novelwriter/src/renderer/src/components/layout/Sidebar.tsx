@@ -217,6 +217,7 @@ export default function Sidebar(): JSX.Element {
   }
 
   const handleSelectChapter = (ch: typeof currentChapter) => {
+    if (!ch) return
     setCurrentChapter(ch)
     setSidebarView('outline')
     openDocTab('chapter', ch.id, ch.title)

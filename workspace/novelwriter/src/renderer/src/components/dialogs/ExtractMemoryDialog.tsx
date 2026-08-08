@@ -29,6 +29,7 @@ interface ExtractedItem {
   description: string
   status: string
   owner: string
+  appearance: string
   time: string
   location: string
 }

@@ -108,7 +108,7 @@ export async function chatOpenAI(
     throw new Error(`API error: ${response.status} ${response.statusText}${errBody ? ` - ${errBody.slice(0, 500)}` : ''}`)
   }
 
-  const data = await response.json()
+  const data = await response.json() as { choices?: { message?: { content?: string } }[] }
   return data.choices?.[0]?.message?.content ?? ''
 }
 
@@ -263,7 +263,7 @@ export async function chatOllama(
 
     return fullContent
   } else {
-    const data = await response.json()
+    const data = await response.json() as { message?: { content?: string } }
     return data.message?.content ?? ''
   }
 }
@@ -284,7 +284,7 @@ export async function listOpenAIModels(provider: AIProvider): Promise<ModelInfo[
       throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = await response.json() as { data?: { id: string; owned_by?: string }[] }
     if (data.data && Array.isArray(data.data)) {
       return data.data.map((m: { id: string; owned_by?: string }) => ({
         id: m.id,
@@ -312,7 +312,7 @@ export async function listOllamaModels(provider: AIProvider): Promise<ModelInfo[
       throw new Error(`获取 Ollama 模型列表失败: ${response.status} ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = await response.json() as { models?: { name: string; size?: number }[] }
     if (data.models && Array.isArray(data.models)) {
       return data.models.map((m: { name: string; size?: number }) => ({
         id: m.name,
@@ -490,7 +490,7 @@ export function registerAIHandlers(): void {
         if (!response.ok) {
           return { success: false, error: `连接失败: ${response.status} ${response.statusText}` }
         }
-        const data = await response.json()
+        const data = await response.json() as { models?: unknown[] }
         const modelCount = data.models?.length ?? 0
         return { success: true, message: `连接成功！可用模型: ${modelCount} 个`, modelCount }
       } else {
@@ -505,7 +505,7 @@ export function registerAIHandlers(): void {
           const errorText = await response.text()
           return { success: false, error: `连接失败: ${response.status} ${response.statusText} - ${errorText.slice(0, 200)}` }
         }
-        const data = await response.json()
+        const data = await response.json() as { data?: unknown[] }
         const modelCount = data.data?.length ?? 0
         return { success: true, message: `连接成功！可用模型: ${modelCount} 个`, modelCount }
       }

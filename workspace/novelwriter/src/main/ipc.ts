@@ -33,6 +33,7 @@ import {
   listOpenAIModels,
   listOllamaModels
 } from './ai'
+import type { ChatMessage } from './ai'
 import type { AIProvider } from './fileStorage'
 import {
   ensureProjectDirs,
@@ -307,6 +308,7 @@ export function registerChapterHandlers(): void {
         outline: data.outline ?? '', sortOrder,
         wordCount: data.wordCount ?? 0, status: data.status ?? '草稿',
         draftVersion: data.draftVersion ?? 1,
+        storyProgressSynced: 0,
         createdAt: time, updatedAt: time
       }
       saveChapter(data.projectId, chapter)
@@ -346,7 +348,7 @@ export function registerChapterHandlers(): void {
     const chapter: Chapter = {
       id, projectId, title: '新建章节', content: '',
       outline: '', sortOrder, wordCount: 0, status: '草稿',
-      draftVersion: 1, createdAt: time, updatedAt: time
+      draftVersion: 1, storyProgressSynced: 0, createdAt: time, updatedAt: time
     }
     saveChapter(projectId, chapter)
 
@@ -500,6 +502,7 @@ export function registerDialogHandlers(): void {
 
   ipcMain.handle('dialog:select-folder', async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender)
+    if (!window) return { canceled: true, filePaths: [] }
     const result = await dialog.showOpenDialog(window, {
       title: '选择项目文件夹',
       properties: ['openDirectory', 'createDirectory']
@@ -986,8 +989,8 @@ export interface WizardProjectData {
   synopsis: string
   worldBackground: string
   chapters: { title: string; outline: string }[]
-  characters: { name: string; description: string; traits: string; age: number; appearance: string; background: string; personality: string; role: string }[]
-  worldSettings: { category: string; key: string; value: string; description: string }[]
+  characters: { name: string; description: string; traits: string; age: number; appearance: string; background: string; personality: string; role: string; skills?: string; relationships?: string; motivation?: string; flaws?: string; growthArc?: string }[]
+  worldSettings: { category: string; key: string; value: string; description: string; rules?: string; relatedSettings?: string; plotImpact?: string; limitations?: string; examples?: string }[]
   timelines: { title: string; description: string; date: string }[]
   locations: { name: string; description: string; type: string }[]
   characterRelations: { character1Name: string; character2Name: string; relation: string; description: string }[]
@@ -1539,6 +1542,9 @@ export function registerAIWizardHandlers(): void {
       wordCountTarget: 0,
       status: '构思中',
       worldBackground: data.worldBackground ?? '',
+      storyProgress: '',
+      writingStyleId: '',
+      skillId: '',
       createdAt: time,
       updatedAt: time
     }
@@ -1559,6 +1565,7 @@ export function registerAIWizardHandlers(): void {
           wordCount: 0,
           status: '草稿',
           draftVersion: 1,
+          storyProgressSynced: 0,
           createdAt: time,
           updatedAt: time
         }
@@ -1589,6 +1596,19 @@ export function registerAIWizardHandlers(): void {
           motivation: char.motivation ?? '',
           flaws: char.flaws ?? '',
           growthArc: char.growthArc ?? '',
+          gender: '',
+          dynasty: '',
+          birthplace: '',
+          heightBuild: '',
+          face: '',
+          hairstyle: '',
+          clothing: '',
+          talents: '',
+          likes: '',
+          importantEvents: '',
+          relationshipsDetail: '',
+          weaknesses: '',
+          specialMarks: '',
           createdAt: time,
           updatedAt: time
         }
@@ -1635,6 +1655,7 @@ export function registerAIWizardHandlers(): void {
           description: timeline.description ?? '',
           date: timeline.date ?? '',
           sortOrder: index,
+          chapterId: '',
           createdAt: time,
           updatedAt: time
         }
@@ -2840,6 +2861,19 @@ export function registerDocHandlers(): void {
               motivation: '',
               flaws: '',
               growthArc: '',
+              gender: '',
+              dynasty: '',
+              birthplace: '',
+              heightBuild: '',
+              face: '',
+              hairstyle: '',
+              clothing: '',
+              talents: '',
+              likes: '',
+              importantEvents: '',
+              relationshipsDetail: '',
+              weaknesses: '',
+              specialMarks: '',
               createdAt: time,
               updatedAt: time
             })
