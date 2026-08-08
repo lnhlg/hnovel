@@ -30,6 +30,10 @@ interface LayoutState {
   closeAllDocs: () => void
   memoryRefreshKey: number
   refreshMemoryGraph: () => void
+
+  // 各文档的滚动位置（比例 0~1，按 doc.id 记录），用于章节/文档切换后恢复滚动位置
+  docScrollRatio: Record<string, number>
+  setDocScrollRatio: (id: string, ratio: number) => void
 }
 
 export const useLayoutStore = create<LayoutState>((set, get) => ({
@@ -107,5 +111,11 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
 
   closeAllDocs: () => set({ openDocs: [], activeDocId: null }),
   memoryRefreshKey: 0,
-  refreshMemoryGraph: () => set((state) => ({ memoryRefreshKey: state.memoryRefreshKey + 1 }))
+  refreshMemoryGraph: () => set((state) => ({ memoryRefreshKey: state.memoryRefreshKey + 1 })),
+  docScrollRatio: {},
+  setDocScrollRatio: (id, ratio) =>
+    set((state) => {
+      if (Math.abs((state.docScrollRatio[id] ?? 0) - ratio) < 0.001) return state
+      return { docScrollRatio: { ...state.docScrollRatio, [id]: ratio } }
+    })
 }))

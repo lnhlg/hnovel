@@ -85,6 +85,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const setDocDirty = useLayoutStore((s) => s.setDocDirty)
   const setDocTitle = useLayoutStore((s) => s.setDocTitle)
   const setDocChapterSubTab = useLayoutStore((s) => s.setDocChapterSubTab)
+  const setDocScrollRatio = useLayoutStore((s) => s.setDocScrollRatio)
   const currentProject = useAppStore((s) => s.currentProject)
   const aiGenerate = useAppStore((s) => s.aiGenerate)
   const aiGenerateChapter = useAppStore((s) => s.aiGenerateChapter)
@@ -97,6 +98,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const setChatProviderId = useAppStore((s) => s.setChatProviderId)
   const setChatReasoningEffort = useAppStore((s) => s.setChatReasoningEffort)
   const skills = useAppStore((s) => s.skills)
+  const writingStyles = useAppStore((s) => s.writingStyles)
+  const loadWritingStyles = useAppStore((s) => s.loadWritingStyles)
   const characters = useAppStore((s) => s.characters)
   const worldSettings = useAppStore((s) => s.worldSettings)
   const timelines = useAppStore((s) => s.timelines)
@@ -117,7 +120,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const loadCharacterRelations = useAppStore((s) => s.loadCharacterRelations)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const searchOverlayRef = useRef<HTMLPreElement>(null)
+  const searchOverlayRef = useRef<HTMLPreElement | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [generatingOutline, setGeneratingOutline] = useState(false)
@@ -206,6 +209,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const ratio = t.value.length > 0 ? pos / t.value.length : 0
     const maxScroll = t.scrollHeight - t.clientHeight
     t.scrollTop = Math.round(ratio * Math.max(maxScroll, 0))
+    // 同步保存滚动比例，避免搜索跳转后立即切章导致位置回退
+    setDocScrollRatio(`${doc.id}:${subTab}`, maxScroll > 0 ? Math.min(1, Math.max(0, t.scrollTop / maxScroll)) : 0)
   }
 
   const goToMatch = (dir: 1 | -1) => {
@@ -323,6 +328,26 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }
   }, [subTab])
 
+  // 恢复该章节上次的滚动位置（按比例，outline/content 分键记录），切换章节/文档后保持阅读位置
+  const restoreScroll = useCallback((): void => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const ratio = useLayoutStore.getState().docScrollRatio[`${doc.id}:${subTab}`]
+    if (ratio && ratio > 0) {
+      const max = ta.scrollHeight - ta.clientHeight
+      if (max > 0) ta.scrollTop = ratio * max
+    }
+  }, [doc.id, subTab])
+
+  // 挂载 / 异步加载完成（loading 占位符卸载并重挂 textarea）后恢复滚动位置；
+  // 定义在 subTab 同步 useEffect 之后，确保切换子标签时先换内容再恢复
+  useEffect(() => {
+    if (loading || !textareaRef.current) return
+    restoreScroll()
+    // 字体/布局渲染完成后再次校正（scrollHeight 可能随之变化）
+    requestAnimationFrame(() => requestAnimationFrame(restoreScroll))
+  }, [loading, doc.id, restoreScroll])
+
   // Ctrl+S 保存
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -345,9 +370,10 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           title: titleRef.current,
           content: full,
           outline: outlineRef.current
-        }).then(() => {
-          if (currentProject) loadChapters(currentProject.id)
-          // 强制更新侧栏（用同步后的标题）
+        }).then(async () => {
+          if (currentProject) await loadChapters(currentProject.id)
+          // 强制更新侧栏（用同步后的标题），在 loadChapters 之后执行
+          // 确保即使后端 JSON 中 title 未正确更新，侧栏也显示正文标题
           if (bodyTitle) {
             useAppStore.setState(state => ({
               chapters: state.chapters.map(c => c.id === doc.entityId ? { ...c, title: bodyTitle } : c)
@@ -667,13 +693,29 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     setPolishResult('')
     setPolishError('')
     try {
+      // 注入项目选中的写作风格（仅普通润色模式；去AI味以项目技能为准，不注入文风）
+      let styleCtx = ''
+      if (!deAiMode) {
+        let styles = writingStyles
+        if (styles.length === 0) {
+          await loadWritingStyles()
+          styles = useAppStore.getState().writingStyles
+        }
+        const styleId = currentProject?.writingStyleId
+        const selectedStyle = styleId ? styles.find(s => s.id === styleId) : undefined
+        if (selectedStyle) {
+          styleCtx = `【写作风格指令】\n- ${selectedStyle.name}：${selectedStyle.instructions}\n\n请严格遵循上述写作风格进行润色。\n\n`
+        } else if (styles.length > 0) {
+          styleCtx = `【写作风格指令】\n${styles.map(s => `- ${s.name}：${s.instructions}`).join('\n')}\n\n请严格遵循上述写作风格进行润色。\n\n`
+        }
+      }
       const outlineCtx = outlineRef.current?.trim()
       const userMsg = polishCtxBefore || polishCtxAfter
-        ? `${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
+        ? `${styleCtx}${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n`
           + (polishCtxBefore ? `【上文上下文】（润色后的目标文本需要与下文衔接自然）\n${polishCtxBefore}\n\n` : '')
           + `【需要润色的目标文本】\n${extractText}\n\n`
           + (polishCtxAfter ? `【下文上下文】（润色后的目标文本需要与下文衔接自然）\n${polishCtxAfter}` : '')
-        : `${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}`
+        : `${styleCtx}${outlineCtx ? `## 本章大纲\n${outlineCtx}\n\n` : ''}请按照以下要求润色这段文本：\n\n${polishInstruction}\n\n原文：\n${extractText}`
       const messages = [
         { role: 'system', content: '你是一位专业的小说文本润色编辑。仅对标记为【需要润色的目标文本】的段落进行润色加工，保持语言风格与上下文一致，确保与上下文自然衔接。只返回润色后的文本，不要加任何解释或标记。' },
         { role: 'user', content: userMsg }
@@ -712,6 +754,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     const newPos = (before + polishResult).length
     ta.selectionStart = ta.selectionEnd = newPos
     ta.scrollTop = scrollTop
+    // 同步保存滚动比例，避免润色应用后立即切章导致位置回退
+    const maxAfter = ta.scrollHeight - ta.clientHeight
+    setDocScrollRatio(`${doc.id}:${subTab}`, maxAfter > 0 ? Math.min(1, Math.max(0, ta.scrollTop / maxAfter)) : 0)
     // 同步到 ref
     if (subTab === 'outline') outlineRef.current = ta.value
     else contentRef.current = ta.value
@@ -721,8 +766,11 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     setDeAiMode(false)
     setPolishResult('')
     setPolishInstruction('')
-    // 恢复焦点到 textarea
-    setTimeout(() => ta.focus(), 0)
+    // 恢复焦点到 textarea（focus 会把滚动拉到选区位置，需在 focus 后再次恢复滚动，避免正文回滚到开头）
+    setTimeout(() => {
+      ta.focus()
+      ta.scrollTop = scrollTop
+    }, 0)
   }
 
   const handleGenerateContent = async (): Promise<void> => {
@@ -910,7 +958,15 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           defaultValue={activeText}
           onChange={handleTextareaChange}
           onContextMenu={handleContextMenu}
-          onScroll={() => { if (searchOverlayRef.current && textareaRef.current) searchOverlayRef.current.scrollTop = textareaRef.current.scrollTop }}
+          onScroll={() => {
+            const ta = textareaRef.current
+            if (searchOverlayRef.current && ta) searchOverlayRef.current.scrollTop = ta.scrollTop
+            // 保存滚动比例（0~1），章节/文档切换重挂载后据此恢复
+            if (ta) {
+              const max = ta.scrollHeight - ta.clientHeight
+              setDocScrollRatio(`${doc.id}:${subTab}`, max > 0 ? Math.min(1, Math.max(0, ta.scrollTop / max)) : 0)
+            }
+          }}
           onKeyDown={e => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); searchInputRef.current?.focus(); return }
             if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
