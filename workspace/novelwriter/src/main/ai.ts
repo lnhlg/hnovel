@@ -342,13 +342,28 @@ export function setCurrentModel(model: string): void {
   }
 }
 
-// 当前正在进行的 AI 请求控制器（用于中止）
-let currentAbortController: AbortController | null = null
+// 进行中的 AI 请求控制器（按 requestId 记录，支持并发请求精准中止）
+const abortControllers = new Map<string, AbortController>()
 
-// 中止当前 AI 请求
-export function abortCurrentRequest(): void {
-  currentAbortController?.abort()
-  currentAbortController = null
+// 注册请求对应的中止控制器
+export function registerAbortController(requestId: string, controller: AbortController): void {
+  abortControllers.set(requestId, controller)
+}
+
+// 请求结束（成功/失败/中止）后释放控制器
+export function releaseAbortController(requestId: string): void {
+  abortControllers.delete(requestId)
+}
+
+// 中止指定请求；未传 requestId 时中止全部进行中的请求（兼容旧调用）
+export function abortRequest(requestId?: string): void {
+  if (requestId) {
+    abortControllers.get(requestId)?.abort()
+    abortControllers.delete(requestId)
+  } else {
+    for (const controller of abortControllers.values()) controller.abort()
+    abortControllers.clear()
+  }
 }
 
 export function registerAIHandlers(): void {
@@ -524,10 +539,12 @@ export function registerAIHandlers(): void {
   })
 
   // AI 聊天（默认用活跃供应商，可通过 options.providerId 临时切换到任意供应商，options.model 切换模型）
-  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max' }) => {
+  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max'; requestId?: string }) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const isStream = options?.stream ?? false
     const reasoningEffort = options?.reasoningEffort
+    // 未传 requestId 时自动生成，保证每个请求都能被独立中止
+    const requestId = options?.requestId || randomUUID()
 
     // 选择供应商：优先用 options.providerId 指定的，否则回退到活跃供应商
     let provider = activeProvider
@@ -544,25 +561,29 @@ export function registerAIHandlers(): void {
       throw new Error('请先选择模型')
     }
 
-    // 创建可中止的请求
+    // 创建可中止的请求，并登记到按 requestId 索引的控制器集合
     const abortController = new AbortController()
-    currentAbortController = abortController
+    registerAbortController(requestId, abortController)
     const signal = abortController.signal
 
-    if (provider.type === 'ollama') {
-      if (isStream && window) {
-        return await chatOllama(provider, model, messages, (chunk) => {
-          window.webContents.send('ai:chunk', chunk)
-        }, signal)
+    try {
+      if (provider.type === 'ollama') {
+        if (isStream && window) {
+          return await chatOllama(provider, model, messages, (chunk) => {
+            window.webContents.send('ai:chunk', chunk)
+          }, signal)
+        }
+        return await chatOllama(provider, model, messages, undefined, signal)
+      } else {
+        if (isStream && window) {
+          return await chatOpenAIStream(provider, model, messages, (chunk) => {
+            window.webContents.send('ai:chunk', chunk)
+          }, signal, reasoningEffort)
+        }
+        return await chatOpenAI(provider, model, messages, signal, reasoningEffort)
       }
-      return await chatOllama(provider, model, messages, undefined, signal)
-    } else {
-      if (isStream && window) {
-        return await chatOpenAIStream(provider, model, messages, (chunk) => {
-          window.webContents.send('ai:chunk', chunk)
-        }, signal, reasoningEffort)
-      }
-      return await chatOpenAI(provider, model, messages, signal, reasoningEffort)
+    } finally {
+      releaseAbortController(requestId)
     }
   })
 
@@ -583,9 +604,9 @@ export function registerAIHandlers(): void {
     return result
   })
 
-  // 中止当前正在进行的 AI 请求
-  ipcMain.handle('ai:abort', () => {
-    abortCurrentRequest()
+  // 中止指定 AI 请求；未传 requestId 时中止全部进行中的请求
+  ipcMain.handle('ai:abort', (_event, requestId?: string) => {
+    abortRequest(requestId)
     return { success: true }
   })
   ipcMain.handle('ai:chatWithProvider', async (_event, providerId: string, model: string, messages: ChatMessage[], options?: { stream?: boolean; sessionId?: string }) => {

@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync } from 'fs'
+import { join, dirname } from 'path'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, copyFileSync, renameSync, unlinkSync } from 'fs'
 
 // ===================== 类型定义 =====================
 
@@ -215,27 +215,54 @@ export interface AIProvider {
 const APP_DIR = join(app.getPath('userData'), 'novelwriter')
 const PROJECTS_FILE = join(APP_DIR, 'projects.json')
 const AI_PROVIDERS_FILE = join(APP_DIR, 'aiProviders.json')
-const WRITING_STYLES_DIR = join(app.getAppPath(), 'writing-styles')
-const WRITING_STYLES_FILE = join(WRITING_STYLES_DIR, 'styles.json')
-const SKILLS_DIR = join(app.getAppPath(), 'skills')
-const SKILLS_FILE = join(SKILLS_DIR, 'skills.json')
+// 出厂默认文风/技能（随应用分发，只读；打包后位于 asar 内）
+const WRITING_STYLES_DEFAULT_FILE = join(app.getAppPath(), 'writing-styles', 'styles.json')
+const SKILLS_DEFAULT_FILE = join(app.getAppPath(), 'skills', 'skills.json')
+// 用户可编辑的文风/技能（存 userData，打包后仍可写）
+const WRITING_STYLES_FILE = join(APP_DIR, 'writing-styles.json')
+const SKILLS_FILE = join(APP_DIR, 'skills.json')
 
 function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 }
 
+// 记录本进程内已备份过的损坏文件，避免重复备份刷屏
+const backedUpCorruptFiles = new Set<string>()
+
 function readJson<T>(path: string): T | undefined {
   if (!existsSync(path)) return undefined
   try {
     return JSON.parse(readFileSync(path, 'utf-8')) as T
-  } catch {
+  } catch (err) {
+    // 解析失败时保留损坏文件副本，便于人工恢复数据
+    if (!backedUpCorruptFiles.has(path)) {
+      backedUpCorruptFiles.add(path)
+      try {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const backupPath = `${path}.${stamp}.corrupt.bak`
+        copyFileSync(path, backupPath)
+        console.error(`[storage] JSON 解析失败，已备份到: ${backupPath}`, err)
+      } catch (backupErr) {
+        console.error('[storage] JSON 解析失败且备份失败:', path, backupErr)
+      }
+    }
     return undefined
   }
 }
 
+// 原子写入：先写临时文件再重命名，避免进程中断时写坏原文件
 function writeJson(path: string, data: unknown): void {
-  ensureDir(join(path, '..'))
-  writeFileSync(path, JSON.stringify(data, null, 2), 'utf-8')
+  ensureDir(dirname(path))
+  const tmpPath = `${path}.${Date.now()}.tmp`
+  try {
+    writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8')
+    renameSync(tmpPath, path)
+  } catch (err) {
+    try {
+      if (existsSync(tmpPath)) unlinkSync(tmpPath)
+    } catch { /* ignore */ }
+    throw err
+  }
 }
 
 /** 获取项目数据目录：有 path 用项目目录，否则用全局目录 */
@@ -511,7 +538,10 @@ export function deleteReference(projectId: string, id: string): void {
 // ===================== 写作风格（全局） =====================
 
 export function loadWritingStyles(): WritingStyle[] {
-  return readJson<WritingStyle[]>(WRITING_STYLES_FILE) ?? []
+  const userStyles = readJson<WritingStyle[]>(WRITING_STYLES_FILE)
+  if (userStyles) return userStyles
+  // 用户文件尚未初始化时回退到应用自带的默认文风
+  return readJson<WritingStyle[]>(WRITING_STYLES_DEFAULT_FILE) ?? []
 }
 
 export function saveWritingStyle(style: WritingStyle): WritingStyle {
@@ -522,14 +552,12 @@ export function saveWritingStyle(style: WritingStyle): WritingStyle {
   } else {
     styles.push(style)
   }
-  ensureDir(WRITING_STYLES_DIR)
   writeJson(WRITING_STYLES_FILE, styles)
   return style
 }
 
 export function deleteWritingStyle(id: string): void {
   const styles = loadWritingStyles().filter(s => s.id !== id)
-  ensureDir(WRITING_STYLES_DIR)
   writeJson(WRITING_STYLES_FILE, styles)
 }
 
@@ -541,7 +569,10 @@ export function getNextWritingStyleSortOrder(): number {
 // ===================== 技能（全局） =====================
 
 export function loadSkills(): Skill[] {
-  return readJson<Skill[]>(SKILLS_FILE) ?? []
+  const userSkills = readJson<Skill[]>(SKILLS_FILE)
+  if (userSkills) return userSkills
+  // 用户文件尚未初始化时回退到应用自带的默认技能
+  return readJson<Skill[]>(SKILLS_DEFAULT_FILE) ?? []
 }
 
 export function saveSkill(skill: Skill): Skill {
@@ -552,14 +583,12 @@ export function saveSkill(skill: Skill): Skill {
   } else {
     skills.push(skill)
   }
-  ensureDir(SKILLS_DIR)
   writeJson(SKILLS_FILE, skills)
   return skill
 }
 
 export function deleteSkill(id: string): void {
   const skills = loadSkills().filter(s => s.id !== id)
-  ensureDir(SKILLS_DIR)
   writeJson(SKILLS_FILE, skills)
 }
 
@@ -615,8 +644,20 @@ export async function initStorage(): Promise<void> {
   // 确保全局文件存在
   if (!existsSync(PROJECTS_FILE)) writeJson(PROJECTS_FILE, [])
   if (!existsSync(AI_PROVIDERS_FILE)) writeJson(AI_PROVIDERS_FILE, [])
-  ensureDir(WRITING_STYLES_DIR)
-  if (!existsSync(WRITING_STYLES_FILE)) writeJson(WRITING_STYLES_FILE, [])
-  ensureDir(SKILLS_DIR)
-  if (!existsSync(SKILLS_FILE)) writeJson(SKILLS_FILE, [])
+  // 首次启动时把应用自带的默认文风/技能复制到 userData，
+  // 之后用户编辑只写 userData，安装目录不再作为可写存储
+  if (!existsSync(WRITING_STYLES_FILE)) {
+    if (existsSync(WRITING_STYLES_DEFAULT_FILE)) {
+      copyFileSync(WRITING_STYLES_DEFAULT_FILE, WRITING_STYLES_FILE)
+    } else {
+      writeJson(WRITING_STYLES_FILE, [])
+    }
+  }
+  if (!existsSync(SKILLS_FILE)) {
+    if (existsSync(SKILLS_DEFAULT_FILE)) {
+      copyFileSync(SKILLS_DEFAULT_FILE, SKILLS_FILE)
+    } else {
+      writeJson(SKILLS_FILE, [])
+    }
+  }
 }

@@ -222,6 +222,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const streamContentRef = useRef('')
+  const requestIdRef = useRef<string | null>(null)
 
   const getExistingList = useCallback((): string => {
     switch (entityType) {
@@ -419,6 +420,8 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const makeRequestId = (): string => `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
   const doSend = async (userMsg: string): Promise<void> => {
     if (!userMsg.trim() || loading) return
 
@@ -463,8 +466,11 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
 
     cleanupRef.current = chunkCleanup ?? null
 
+    const requestId = makeRequestId()
+    requestIdRef.current = requestId
+
     try {
-        const result = await window.api.aiChat(apiMessages, { stream: true, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort })
+        const result = await window.api.aiChat(apiMessages, { stream: true, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort, requestId })
       if (result) {
         streamContentRef.current = result
         setMessages((prev) => {
@@ -495,7 +501,9 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
                   '请把刚才的修改数据用 JSON 数组放在 ```json 代码块中输出，不要其他文字。'
               }
             ]
-            const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort })
+            const followUpId = makeRequestId()
+            requestIdRef.current = followUpId
+            const jsonResult = await window.api.aiChat(followUpMessages, { stream: false, model: selectedModel || undefined, providerId: selectedProviderId || undefined, reasoningEffort, requestId: followUpId })
             if (jsonResult) {
               parsed = parseJsonBlocks(jsonResult)
             }
@@ -512,6 +520,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
       setLoading(false)
       cleanupRef.current?.()
       cleanupRef.current = null
+      requestIdRef.current = null
     }
   }
 
@@ -530,7 +539,8 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
   }
 
   const handleAbort = (): void => {
-    window.api.aiAbort?.()
+    window.api.aiAbort?.(requestIdRef.current ?? undefined)
+    requestIdRef.current = null
     setLoading(false)
     cleanupRef.current?.()
     cleanupRef.current = null
