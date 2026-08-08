@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Send, Sparkles, FolderOpen, Check, Loader2, RefreshCw, Edit3 } from 'lucide-react'
+import { X, Send, Sparkles, FolderOpen, Check, Loader2, RefreshCw, Edit3, Square } from 'lucide-react'
 import ModelSelector from '../ModelSelector'
 
 interface WizardMessage {
@@ -52,6 +52,24 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamContentRef = useRef('')
+  const requestIdRef = useRef<string | null>(null)
+  const stoppedRef = useRef(false)
+
+  const beginWizardRequest = (): string => {
+    stoppedRef.current = false
+    const id = `wizard-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    requestIdRef.current = id
+    return id
+  }
+  const endWizardRequest = (): void => {
+    requestIdRef.current = null
+  }
+  const handleStopWizard = (): void => {
+    stoppedRef.current = true
+    window.api.aiAbort?.(requestIdRef.current ?? undefined)
+    requestIdRef.current = null
+    setIsLoading(false)
+  }
 
   useEffect(() => {
     if (open) {
@@ -113,7 +131,8 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
       setMessages([{ role: 'assistant', content: '' }])
 
       try {
-        const result = await window.api.wizardSend?.(sessionIdRef.current, '你好，我想创建一个小说项目', selectedModel, selectedProviderId || undefined)
+        const rid = beginWizardRequest()
+        const result = await window.api.wizardSend?.(sessionIdRef.current, '你好，我想创建一个小说项目', selectedModel, selectedProviderId || undefined, rid)
         if (result) {
           streamContentRef.current = result.content
           setMessages((prev) => {
@@ -132,8 +151,10 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         }
       } finally {
         cleanup?.()
+        endWizardRequest()
       }
     } catch (err) {
+      if (stoppedRef.current) return
       console.error('向导初始化失败:', err)
       setErrorMsg(err instanceof Error ? err.message : '初始化失败')
     } finally {
@@ -205,7 +226,8 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel, selectedProviderId || undefined)
+      const rid = beginWizardRequest()
+      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel, selectedProviderId || undefined, rid)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -222,11 +244,13 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         }
       }
     } catch (err) {
+      if (stoppedRef.current) return
       console.error('发送选项失败:', err)
       setErrorMsg(err instanceof Error ? err.message : '发送失败')
     } finally {
       setIsLoading(false)
       cleanup?.()
+      endWizardRequest()
     }
   }
 
@@ -255,7 +279,8 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel, selectedProviderId || undefined)
+      const rid = beginWizardRequest()
+      const result = await window.api.wizardSend?.(sessionIdRef.current, userMsg, selectedModel, selectedProviderId || undefined, rid)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -272,11 +297,13 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         }
       }
     } catch (err) {
+      if (stoppedRef.current) return
       console.error('发送消息失败:', err)
       setErrorMsg(err instanceof Error ? err.message : '发送失败')
     } finally {
       setIsLoading(false)
       cleanup?.()
+      endWizardRequest()
     }
   }
 
@@ -312,7 +339,8 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardRegenerate?.(sessionIdRef.current, selectedModel, selectedProviderId || undefined)
+      const rid = beginWizardRequest()
+      const result = await window.api.wizardRegenerate?.(sessionIdRef.current, selectedModel, selectedProviderId || undefined, rid)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -332,11 +360,13 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         }
       }
     } catch (err) {
+      if (stoppedRef.current) return
       console.error('重新生成失败:', err)
       setErrorMsg(err instanceof Error ? err.message : '重新生成失败')
     } finally {
       setIsLoading(false)
       cleanup?.()
+      endWizardRequest()
     }
   }
 
@@ -363,9 +393,12 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     setEditingContent('')
 
     try {
-      await window.api.wizardSend?.(sessionIdRef.current, editingContent.trim(), selectedModel, selectedProviderId || undefined)
+      const rid = beginWizardRequest()
+      await window.api.wizardSend?.(sessionIdRef.current, editingContent.trim(), selectedModel, selectedProviderId || undefined, rid)
     } catch (err) {
       console.error('编辑后重新发送失败:', err)
+    } finally {
+      endWizardRequest()
     }
   }
 
@@ -394,7 +427,8 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
     })
 
     try {
-      const result = await window.api.wizardSend?.(sessionIdRef.current, triggerMsg, selectedModel, selectedProviderId || undefined)
+      const rid = beginWizardRequest()
+      const result = await window.api.wizardSend?.(sessionIdRef.current, triggerMsg, selectedModel, selectedProviderId || undefined, rid)
       if (result) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -414,11 +448,13 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
         }
       }
     } catch (err) {
+      if (stoppedRef.current) return
       console.error('生成项目规范失败:', err)
       setErrorMsg(err instanceof Error ? err.message : '生成失败')
     } finally {
       setIsLoading(false)
       cleanup?.()
+      endWizardRequest()
     }
   }
 
@@ -896,24 +932,26 @@ export default function AIWizardDialog({ open, onClose, onCreated }: AIWizardDia
                   rows={2}
                   disabled={isLoading || creating}
                 />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || isLoading || creating}
-                  className="btn btn-primary flex items-center gap-1.5 h-9"
-                  style={{ minWidth: 80 }}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      <span>生成中</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send size={14} />
-                      <span>发送</span>
-                    </>
-                  )}
-                </button>
+                {isLoading ? (
+                  <button
+                    onClick={handleStopWizard}
+                    className="btn flex items-center gap-1.5 h-9"
+                    style={{ minWidth: 80, backgroundColor: 'var(--color-danger)', color: '#fff' }}
+                  >
+                    <Square size={14} />
+                    <span>停止</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() || creating}
+                    className="btn btn-primary flex items-center gap-1.5 h-9"
+                    style={{ minWidth: 80 }}
+                  >
+                    <Send size={14} />
+                    <span>发送</span>
+                  </button>
+                )}
                 {/* 生成项目规范按钮 */}
                 <button
                   onClick={handleGenerateSpec}

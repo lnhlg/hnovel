@@ -1,49 +1,26 @@
-import { randomUUID } from 'crypto'
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
+import { ipcMain } from 'electron'
+import { existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
-import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
-  loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
-  loadWorldSettings, saveWorldSetting, deleteWorldSetting,
-  loadTimelines, saveTimeline, deleteTimeline,
-  loadLocations, saveLocation, deleteLocation,
-  loadItems, saveItem, deleteItem,
-  loadDialogues, saveDialogue, deleteDialogue,
-  loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
-  loadCharacterPositions, saveCharacterPositions,
-  loadInspirations, saveInspiration, deleteInspiration,
-  loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
-  loadAIProviders
+import { saveProject, loadProjectById,
+  loadChapters, saveChapter,
+  loadCharacters, saveCharacter,
+  loadWorldSettings, saveWorldSetting,
+  loadTimelines,
+  loadLocations, saveLocation,
+  loadCharacterRelations,
+  loadInspirations,
+  loadWritingLogs,
+  loadReferences
 } from '../fileStorage'
+
+
 import {
-  getActiveProvider,
-  getCurrentModel,
-  setCurrentModel,
-  chatOpenAI,
-  chatOpenAIStream,
-  chatOllama,
-  loadActiveProvider,
-  listOpenAIModels,
-  listOllamaModels
-} from '../ai'
-import type { ChatMessage } from '../ai'
-import type { AIProvider } from '../fileStorage'
-import {
-  ensureProjectDirs,
   saveProjectMD,
   saveCharacterMD,
   deleteCharacterMD,
   saveWorldSettingMD,
   deleteWorldSettingMD,
   saveChapterMD,
-  deleteChapterMD,
   saveTimelineMD,
   saveLocationMD,
   deleteLocationMD,
@@ -51,7 +28,6 @@ import {
   saveInspirationsMD,
   saveReferencesMD,
   saveWritingLogsMD,
-  saveAllProjectDataMD,
   readProjectContent,
   writeProjectContent,
   readCharacterContent,
@@ -63,17 +39,11 @@ import {
   readLocationContent,
   writeLocationContent,
   readTimelineContent,
-  writeTimelineContent,
   readCharacterRelationsContent,
-  writeCharacterRelationsContent,
   readInspirationsContent,
-  writeInspirationsContent,
   readReferencesContent,
-  writeReferencesContent,
   readWritingLogsContent,
-  writeWritingLogsContent,
   readProjectMD,
-  readCharacterMD,
   saveCharactersMD,
   readCharactersContent,
   writeCharactersContent,
@@ -86,11 +56,9 @@ import {
   parseCharactersFromMD,
   parseWorldSettingsFromMD,
   parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
+  stripChapterTitle
 } from '../markdownStorage'
-import { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
+import { now, extractTitleFromBody } from './helpers'
 import { parseCharacterFromContent } from './assets'
 
 

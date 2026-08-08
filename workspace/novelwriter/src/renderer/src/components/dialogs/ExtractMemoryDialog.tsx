@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState } from 'react'
 import { X, Loader2, Check, ChevronDown, ChevronRight, User, Package, Building2, Route, MapPin, HeartHandshake, Eye, MessageSquare, Sparkles, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/app'
 import { useLayoutStore } from '../../store/layout'

@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync, statSync } from 'fs'
+import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync } from 'fs'
 import { atomicWriteFile } from './atomicWrite'
 import type { Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference } from './fileStorage'
 

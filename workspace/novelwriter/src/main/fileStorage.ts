@@ -1,6 +1,6 @@
 import { app, shell } from 'electron'
 import { join, dirname } from 'path'
-import { readFileSync, existsSync, mkdirSync, readdirSync, statSync, rmSync, copyFileSync, unlinkSync } from 'fs'
+import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, copyFileSync, unlinkSync } from 'fs'
 import { atomicWriteJson } from './atomicWrite'
 
 // ===================== 类型定义 =====================

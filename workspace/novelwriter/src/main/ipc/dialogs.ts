@@ -1,110 +1,41 @@
-import { randomUUID } from 'crypto'
 import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
-import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
-  loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
-  loadWorldSettings, saveWorldSetting, deleteWorldSetting,
-  loadTimelines, saveTimeline, deleteTimeline,
-  loadLocations, saveLocation, deleteLocation,
-  loadItems, saveItem, deleteItem,
-  loadDialogues, saveDialogue, deleteDialogue,
-  loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
-  loadCharacterPositions, saveCharacterPositions,
-  loadInspirations, saveInspiration, deleteInspiration,
-  loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
-  loadAIProviders
-} from '../fileStorage'
-import {
-  getActiveProvider,
-  getCurrentModel,
-  setCurrentModel,
-  chatOpenAI,
-  chatOpenAIStream,
-  chatOllama,
-  loadActiveProvider,
-  listOpenAIModels,
-  listOllamaModels
-} from '../ai'
-import type { ChatMessage } from '../ai'
-import type { AIProvider } from '../fileStorage'
-import {
-  ensureProjectDirs,
-  saveProjectMD,
-  saveCharacterMD,
-  deleteCharacterMD,
-  saveWorldSettingMD,
-  deleteWorldSettingMD,
-  saveChapterMD,
-  deleteChapterMD,
-  saveTimelineMD,
-  saveLocationMD,
-  deleteLocationMD,
-  saveCharacterRelationsMD,
-  saveInspirationsMD,
-  saveReferencesMD,
-  saveWritingLogsMD,
-  saveAllProjectDataMD,
-  readProjectContent,
-  writeProjectContent,
-  readCharacterContent,
-  writeCharacterContent,
-  readChapterContent,
-  writeChapterContent,
-  readWorldSettingContent,
-  writeWorldSettingContent,
-  readLocationContent,
-  writeLocationContent,
-  readTimelineContent,
-  writeTimelineContent,
-  readCharacterRelationsContent,
-  writeCharacterRelationsContent,
-  readInspirationsContent,
-  writeInspirationsContent,
-  readReferencesContent,
-  writeReferencesContent,
-  readWritingLogsContent,
-  writeWritingLogsContent,
-  readProjectMD,
-  readCharacterMD,
-  saveCharactersMD,
-  readCharactersContent,
-  writeCharactersContent,
-  saveWorldSettingsMD,
-  readWorldSettingsContent,
-  writeWorldSettingsContent,
-  saveLocationsMD,
-  readLocationsContent,
-  writeLocationsContent,
-  parseCharactersFromMD,
-  parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
-} from '../markdownStorage'
-import { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
 
+
+
+
+
+
+
+// 用户最近通过文件对话框选中的路径（上限 200 条），file:readText 只允许读这些文件
+const recentSelectedPaths = new Set<string>()
+function rememberSelectedPaths(result: { filePaths?: string[]; filePath?: string }): void {
+  for (const p of result.filePaths ?? []) {
+    if (p) recentSelectedPaths.add(p)
+  }
+  if (result.filePath) recentSelectedPaths.add(result.filePath)
+  while (recentSelectedPaths.size > 200) {
+    const first = recentSelectedPaths.values().next().value
+    if (first === undefined) break
+    recentSelectedPaths.delete(first)
+  }
+}
 
 
 export function registerDialogHandlers(): void {
   ipcMain.handle('dialog:open', async (event, options: Electron.OpenDialogOptions) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) return { canceled: true, filePaths: [] }
-    return dialog.showOpenDialog(window, options)
+    const result = await dialog.showOpenDialog(window, options)
+    rememberSelectedPaths(result)
+    return result
   })
 
   ipcMain.handle('dialog:save', async (event, options: Electron.SaveDialogOptions) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) return { canceled: true, filePath: '' }
-    return dialog.showSaveDialog(window, options)
+    const result = await dialog.showSaveDialog(window, options)
+    rememberSelectedPaths(result)
+    return result
   })
 
   ipcMain.handle('dialog:select-folder', async (event) => {
@@ -114,6 +45,7 @@ export function registerDialogHandlers(): void {
       title: '选择项目文件夹',
       properties: ['openDirectory', 'createDirectory']
     })
+    rememberSelectedPaths(result)
     return result
   })
 
@@ -121,6 +53,10 @@ export function registerDialogHandlers(): void {
   ipcMain.handle('file:readText', async (event, filePath: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) return { canceled: true, content: '' }
+    // 只允许读取用户最近通过文件对话框选中的文件，避免任意路径读取
+    if (typeof filePath !== 'string' || !recentSelectedPaths.has(filePath)) {
+      return { canceled: true, content: '', error: '未授权读取该文件，请通过文件对话框重新选择' }
+    }
     try {
       const { readFileSync } = await import('fs')
       const content = readFileSync(filePath, 'utf-8')

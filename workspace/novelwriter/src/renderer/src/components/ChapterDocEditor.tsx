@@ -673,7 +673,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }
   }
 
-  const handleGenerateOutline = async (): Promise<void> => {
+  const handleGenerateOutline = async (requestId?: string): Promise<void> => {
     const body = contentRef.current.trim()
     if (!body) {
       alert('正文为空，无法生成大纲。请先编写或导入正文。')
@@ -690,7 +690,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         chapterTitle: title,
         chapterContent: body,
         providerId: chatProviderId || undefined,
-        model: chatModel || undefined
+        model: chatModel || undefined,
+        requestId
       })
       if (result.error) {
         alert('生成失败：' + result.error)
@@ -834,7 +835,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }, 0)
   }
 
-  const handleGenerateContent = async (): Promise<void> => {
+  const handleGenerateContent = async (requestId?: string): Promise<void> => {
     if (!currentProject) return
 
     // 重新加载章节确保获取最新数据
@@ -892,7 +893,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         chapterOutline: outline,
         previousChapters: prevChapters,
         providerId: chatProviderId || undefined,
-        model: chatModel || undefined
+        model: chatModel || undefined,
+        requestId
       })
     } finally {
       cleanup?.()
@@ -1254,11 +1256,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           title="从正文生成大纲"
           chapterTitle={doc.title}
           onClose={() => setGenOutlineDialog(false)}
-          onStart={async () => {
+          onStart={async (requestId) => {
             try {
-              await handleGenerateOutline()
-            } catch (err) {
-              throw err
+              await handleGenerateOutline(requestId)
             } finally {
               setGenOutlineDialog(false)
             }
@@ -1272,11 +1272,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
           title="AI 生成正文"
           chapterTitle={doc.title}
           onClose={() => setGenContentDialog(false)}
-          onStart={async () => {
+          onStart={async (requestId) => {
             try {
-              await handleGenerateContent()
-            } catch (err) {
-              throw err
+              await handleGenerateContent(requestId)
             } finally {
               setGenContentDialog(false)
             }

@@ -1,96 +1,15 @@
 
-import { randomUUID } from 'crypto'
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
+
+
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
-  loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
-  loadWorldSettings, saveWorldSetting, deleteWorldSetting,
-  loadTimelines, saveTimeline, deleteTimeline,
-  loadLocations, saveLocation, deleteLocation,
-  loadItems, saveItem, deleteItem,
-  loadDialogues, saveDialogue, deleteDialogue,
-  loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
-  loadCharacterPositions, saveCharacterPositions,
-  loadInspirations, saveInspiration, deleteInspiration,
-  loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
-  loadAIProviders
-} from '../fileStorage'
-import {
-  getActiveProvider,
   getCurrentModel,
   setCurrentModel,
-  chatOpenAI,
-  chatOpenAIStream,
-  chatOllama,
-  loadActiveProvider,
   listOpenAIModels,
   listOllamaModels
 } from '../ai'
-import type { ChatMessage } from '../ai'
 import type { AIProvider } from '../fileStorage'
-import {
-  ensureProjectDirs,
-  saveProjectMD,
-  saveCharacterMD,
-  deleteCharacterMD,
-  saveWorldSettingMD,
-  deleteWorldSettingMD,
-  saveChapterMD,
-  deleteChapterMD,
-  saveTimelineMD,
-  saveLocationMD,
-  deleteLocationMD,
-  saveCharacterRelationsMD,
-  saveInspirationsMD,
-  saveReferencesMD,
-  saveWritingLogsMD,
-  saveAllProjectDataMD,
-  readProjectContent,
-  writeProjectContent,
-  readCharacterContent,
-  writeCharacterContent,
-  readChapterContent,
-  writeChapterContent,
-  readWorldSettingContent,
-  writeWorldSettingContent,
-  readLocationContent,
-  writeLocationContent,
-  readTimelineContent,
-  writeTimelineContent,
-  readCharacterRelationsContent,
-  writeCharacterRelationsContent,
-  readInspirationsContent,
-  writeInspirationsContent,
-  readReferencesContent,
-  writeReferencesContent,
-  readWritingLogsContent,
-  writeWritingLogsContent,
-  readProjectMD,
-  readCharacterMD,
-  saveCharactersMD,
-  readCharactersContent,
-  writeCharactersContent,
-  saveWorldSettingsMD,
-  readWorldSettingsContent,
-  writeWorldSettingsContent,
-  saveLocationsMD,
-  readLocationsContent,
-  writeLocationsContent,
-  parseCharactersFromMD,
-  parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
-} from '../markdownStorage'
+
+
 
 
 function now(): string {

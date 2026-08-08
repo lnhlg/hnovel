@@ -1,7 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react'
 import { MapPin, Clock, Share2, MessageSquare, Link2, Check, X, Trash2 } from 'lucide-react'
 import { useAppStore } from '../store/app'
-import { useLayoutStore } from '../store/layout'
 
 interface MemoryNode {
   id: string
@@ -918,7 +917,7 @@ export default function MemoryGraph({
                       const color = node.color
                       const r = getRadius(node.type)
                       const isChar = node.type === 'character'
-                      let shape: JSX.Element | null = null
+                      let shape: JSX.Element | null
                       if (isChar) {
                         shape = (
                           <>

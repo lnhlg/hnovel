@@ -1,96 +1,23 @@
 import { randomUUID } from 'crypto'
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { ipcMain, BrowserWindow } from 'electron'
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
-  loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
-  loadWorldSettings, saveWorldSetting, deleteWorldSetting,
-  loadTimelines, saveTimeline, deleteTimeline,
-  loadLocations, saveLocation, deleteLocation,
-  loadItems, saveItem, deleteItem,
-  loadDialogues, saveDialogue, deleteDialogue,
-  loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
-  loadCharacterPositions, saveCharacterPositions,
-  loadInspirations, saveInspiration, deleteInspiration,
-  loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
+  Project, Chapter, Character, WorldSetting, Timeline, Location, CharacterRelation, Inspiration, WritingLog, Reference, saveProject, saveChapter, saveCharacter, saveWorldSetting, saveTimeline, saveLocation, saveCharacterRelation, saveInspiration, saveReference,
   loadAIProviders
 } from '../fileStorage'
 import {
   getActiveProvider,
   getCurrentModel,
-  setCurrentModel,
-  chatOpenAI,
   chatOpenAIStream,
   chatOllama,
   loadActiveProvider,
-  listOpenAIModels,
-  listOllamaModels
+  registerAbortController,
+  releaseAbortController
 } from '../ai'
 import type { ChatMessage } from '../ai'
-import type { AIProvider } from '../fileStorage'
 import {
-  ensureProjectDirs,
-  saveProjectMD,
-  saveCharacterMD,
-  deleteCharacterMD,
-  saveWorldSettingMD,
-  deleteWorldSettingMD,
-  saveChapterMD,
-  deleteChapterMD,
-  saveTimelineMD,
-  saveLocationMD,
-  deleteLocationMD,
-  saveCharacterRelationsMD,
-  saveInspirationsMD,
-  saveReferencesMD,
-  saveWritingLogsMD,
-  saveAllProjectDataMD,
-  readProjectContent,
-  writeProjectContent,
-  readCharacterContent,
-  writeCharacterContent,
-  readChapterContent,
-  writeChapterContent,
-  readWorldSettingContent,
-  writeWorldSettingContent,
-  readLocationContent,
-  writeLocationContent,
-  readTimelineContent,
-  writeTimelineContent,
-  readCharacterRelationsContent,
-  writeCharacterRelationsContent,
-  readInspirationsContent,
-  writeInspirationsContent,
-  readReferencesContent,
-  writeReferencesContent,
-  readWritingLogsContent,
-  writeWritingLogsContent,
-  readProjectMD,
-  readCharacterMD,
-  saveCharactersMD,
-  readCharactersContent,
-  writeCharactersContent,
-  saveWorldSettingsMD,
-  readWorldSettingsContent,
-  writeWorldSettingsContent,
-  saveLocationsMD,
-  readLocationsContent,
-  writeLocationsContent,
-  parseCharactersFromMD,
-  parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
+  saveAllProjectDataMD
 } from '../markdownStorage'
-import { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
+import { now, ensureModel } from './helpers'
 
 
 
@@ -489,7 +416,7 @@ export function registerAIWizardHandlers(): void {
   })
 
   // 发送消息给 AI 向导
-  ipcMain.handle('wizard:send', async (event, sessionId: string, userMessage: string, model?: string, providerId?: string) => {
+  ipcMain.handle('wizard:send', async (event, sessionId: string, userMessage: string, model?: string, providerId?: string, requestId?: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const session = wizardSessions.get(sessionId)
     if (!session) {
@@ -525,10 +452,17 @@ export function registerAIWizardHandlers(): void {
     ]
 
     let response: string
-    if (provider.type === 'ollama') {
-      response = await chatOllama(provider, selectedModel, messages, sendChunk)
-    } else {
-      response = await chatOpenAIStream(provider, selectedModel, messages, sendChunk)
+    const rid = requestId || randomUUID()
+    const abortController = new AbortController()
+    registerAbortController(rid, abortController)
+    try {
+      if (provider.type === 'ollama') {
+        response = await chatOllama(provider, selectedModel, messages, sendChunk, abortController.signal)
+      } else {
+        response = await chatOpenAIStream(provider, selectedModel, messages, sendChunk, abortController.signal)
+      }
+    } finally {
+      releaseAbortController(rid)
     }
 
     session.messages.push({ role: 'assistant', content: response })
@@ -548,7 +482,7 @@ export function registerAIWizardHandlers(): void {
   })
 
   // 重新生成最后一条回复
-  ipcMain.handle('wizard:regenerate', async (event, sessionId: string, model?: string, providerId?: string) => {
+  ipcMain.handle('wizard:regenerate', async (event, sessionId: string, model?: string, providerId?: string, requestId?: string) => {
     const window = BrowserWindow.fromWebContents(event.sender)
     const session = wizardSessions.get(sessionId)
     if (!session) {
@@ -609,10 +543,17 @@ export function registerAIWizardHandlers(): void {
     ]
 
     let response: string
-    if (provider.type === 'ollama') {
-      response = await chatOllama(provider, selectedModel, messages, sendChunk)
-    } else {
-      response = await chatOpenAIStream(provider, selectedModel, messages, sendChunk)
+    const rid = requestId || randomUUID()
+    const abortController = new AbortController()
+    registerAbortController(rid, abortController)
+    try {
+      if (provider.type === 'ollama') {
+        response = await chatOllama(provider, selectedModel, messages, sendChunk, abortController.signal)
+      } else {
+        response = await chatOpenAIStream(provider, selectedModel, messages, sendChunk, abortController.signal)
+      }
+    } finally {
+      releaseAbortController(rid)
     }
 
     session.messages.push({ role: 'assistant', content: response })

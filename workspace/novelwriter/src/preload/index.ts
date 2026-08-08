@@ -65,8 +65,8 @@ const api = {
 
   // AI 向导（引导式项目创建）
   wizardInit: (sessionId: string) => ipcRenderer.invoke('wizard:init', sessionId),
-  wizardSend: (sessionId: string, message: string, model?: string, providerId?: string) => ipcRenderer.invoke('wizard:send', sessionId, message, model, providerId),
-  wizardRegenerate: (sessionId: string, model?: string, providerId?: string) => ipcRenderer.invoke('wizard:regenerate', sessionId, model, providerId),
+  wizardSend: (sessionId: string, message: string, model?: string, providerId?: string, requestId?: string) => ipcRenderer.invoke('wizard:send', sessionId, message, model, providerId, requestId),
+  wizardRegenerate: (sessionId: string, model?: string, providerId?: string, requestId?: string) => ipcRenderer.invoke('wizard:regenerate', sessionId, model, providerId, requestId),
   wizardCreateProject: (sessionId: string, folderPath: string) =>
     ipcRenderer.invoke('wizard:createProject', sessionId, folderPath),
   wizardEnd: (sessionId: string) => ipcRenderer.invoke('wizard:end', sessionId),

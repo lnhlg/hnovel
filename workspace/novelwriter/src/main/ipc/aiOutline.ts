@@ -1,96 +1,36 @@
 import { randomUUID } from 'crypto'
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { ipcMain, BrowserWindow } from 'electron'
 import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
+  loadProjects, saveProject, loadProjectById,
   loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
-  loadWorldSettings, saveWorldSetting, deleteWorldSetting,
-  loadTimelines, saveTimeline, deleteTimeline,
-  loadLocations, saveLocation, deleteLocation,
-  loadItems, saveItem, deleteItem,
-  loadDialogues, saveDialogue, deleteDialogue,
-  loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
-  loadCharacterPositions, saveCharacterPositions,
-  loadInspirations, saveInspiration, deleteInspiration,
-  loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
+  loadChapters, saveChapter,
+  loadCharacters,
+  loadWorldSettings,
+  loadTimelines,
+  loadItems,
+  loadDialogues,
+  loadCharacterRelations,
+  loadWritingStyles,
+  loadSkills,
   loadAIProviders
 } from '../fileStorage'
 import {
   getActiveProvider,
-  getCurrentModel,
-  setCurrentModel,
   chatOpenAI,
   chatOpenAIStream,
   chatOllama,
   loadActiveProvider,
-  listOpenAIModels,
-  listOllamaModels
+  registerAbortController,
+  releaseAbortController
 } from '../ai'
 import type { ChatMessage } from '../ai'
-import type { AIProvider } from '../fileStorage'
 import {
-  ensureProjectDirs,
-  saveProjectMD,
-  saveCharacterMD,
-  deleteCharacterMD,
-  saveWorldSettingMD,
-  deleteWorldSettingMD,
   saveChapterMD,
-  deleteChapterMD,
-  saveTimelineMD,
-  saveLocationMD,
-  deleteLocationMD,
-  saveCharacterRelationsMD,
-  saveInspirationsMD,
-  saveReferencesMD,
-  saveWritingLogsMD,
-  saveAllProjectDataMD,
-  readProjectContent,
-  writeProjectContent,
-  readCharacterContent,
-  writeCharacterContent,
   readChapterContent,
-  writeChapterContent,
-  readWorldSettingContent,
-  writeWorldSettingContent,
-  readLocationContent,
-  writeLocationContent,
-  readTimelineContent,
-  writeTimelineContent,
-  readCharacterRelationsContent,
-  writeCharacterRelationsContent,
-  readInspirationsContent,
-  writeInspirationsContent,
-  readReferencesContent,
-  writeReferencesContent,
-  readWritingLogsContent,
-  writeWritingLogsContent,
-  readProjectMD,
-  readCharacterMD,
-  saveCharactersMD,
-  readCharactersContent,
-  writeCharactersContent,
-  saveWorldSettingsMD,
-  readWorldSettingsContent,
-  writeWorldSettingsContent,
-  saveLocationsMD,
-  readLocationsContent,
-  writeLocationsContent,
-  parseCharactersFromMD,
-  parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
+  saveStoryProgressMD
 } from '../markdownStorage'
-import { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
+import { now, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
+import { validateOrThrow, generateChapterOptsSchema, planChaptersOptsSchema } from '../ipcValidation'
 
 
 
@@ -136,8 +76,10 @@ export function registerAIOutlineHandlers(): void {
     chapterOutline: string
     providerId?: string
     model?: string
+    requestId?: string
     previousChapters: { title: string; content: string }[]
   }) => {
+    validateOrThrow(generateChapterOptsSchema, opts, 'ai:generateChapter')
     const window = BrowserWindow.getFocusedWindow()
     const sendChunk = window ? (chunk: string) => window.webContents.send('ai:chunk', chunk) : () => {}
 
@@ -285,10 +227,18 @@ export function registerAIOutlineHandlers(): void {
 
     const model = opts.model || await ensureModel(provider)
 
-    if (provider.type === 'ollama') {
-      return await chatOllama(provider, model, messages as ChatMessage[], sendChunk)
-    } else {
-      return await chatOpenAIStream(provider, model, messages as ChatMessage[], sendChunk)
+    // 支持按 requestId 中止生成
+    const requestId = opts.requestId || randomUUID()
+    const abortController = new AbortController()
+    registerAbortController(requestId, abortController)
+    try {
+      if (provider.type === 'ollama') {
+        return await chatOllama(provider, model, messages as ChatMessage[], sendChunk, abortController.signal)
+      } else {
+        return await chatOpenAIStream(provider, model, messages as ChatMessage[], sendChunk, abortController.signal)
+      }
+    } finally {
+      releaseAbortController(requestId)
     }
   })
 
@@ -299,7 +249,9 @@ export function registerAIOutlineHandlers(): void {
     genre?: string
     providerId?: string
     model?: string
+    requestId?: string
   }) => {
+    validateOrThrow(planChaptersOptsSchema, opts, 'ai:planChapters')
     const window = BrowserWindow.getFocusedWindow()
     const sendChunk = window ? (chunk: string) => window.webContents.send('ai:chunk', chunk) : () => {}
 
@@ -340,10 +292,17 @@ ${opts.synopsis}
     const model = opts.model || await ensureModel(provider)
 
     let result: string
-    if (provider.type === 'ollama') {
-      result = await chatOllama(provider, model, messages as ChatMessage[])
-    } else {
-      result = await chatOpenAI(provider, model, messages as ChatMessage[])
+    const requestId = opts.requestId || randomUUID()
+    const abortController = new AbortController()
+    registerAbortController(requestId, abortController)
+    try {
+      if (provider.type === 'ollama') {
+        result = await chatOllama(provider, model, messages as ChatMessage[], undefined, abortController.signal)
+      } else {
+        result = await chatOpenAI(provider, model, messages as ChatMessage[], abortController.signal)
+      }
+    } finally {
+      releaseAbortController(requestId)
     }
 
     // 尝试从结果中提取 JSON

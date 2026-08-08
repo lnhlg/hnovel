@@ -1,96 +1,19 @@
 import { randomUUID } from 'crypto'
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
-import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
-  loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
-  loadWorldSettings, saveWorldSetting, deleteWorldSetting,
-  loadTimelines, saveTimeline, deleteTimeline,
-  loadLocations, saveLocation, deleteLocation,
-  loadItems, saveItem, deleteItem,
-  loadDialogues, saveDialogue, deleteDialogue,
-  loadCharacterRelations, saveCharacterRelation, deleteCharacterRelation,
-  loadCharacterPositions, saveCharacterPositions,
-  loadInspirations, saveInspiration, deleteInspiration,
-  loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
+import { ipcMain } from 'electron'
+import { Character,
   loadAIProviders
 } from '../fileStorage'
 import {
   getActiveProvider,
-  getCurrentModel,
-  setCurrentModel,
   chatOpenAI,
-  chatOpenAIStream,
   chatOllama,
   loadActiveProvider,
-  listOpenAIModels,
-  listOllamaModels
+  registerAbortController,
+  releaseAbortController
 } from '../ai'
-import type { ChatMessage } from '../ai'
-import type { AIProvider } from '../fileStorage'
-import {
-  ensureProjectDirs,
-  saveProjectMD,
-  saveCharacterMD,
-  deleteCharacterMD,
-  saveWorldSettingMD,
-  deleteWorldSettingMD,
-  saveChapterMD,
-  deleteChapterMD,
-  saveTimelineMD,
-  saveLocationMD,
-  deleteLocationMD,
-  saveCharacterRelationsMD,
-  saveInspirationsMD,
-  saveReferencesMD,
-  saveWritingLogsMD,
-  saveAllProjectDataMD,
-  readProjectContent,
-  writeProjectContent,
-  readCharacterContent,
-  writeCharacterContent,
-  readChapterContent,
-  writeChapterContent,
-  readWorldSettingContent,
-  writeWorldSettingContent,
-  readLocationContent,
-  writeLocationContent,
-  readTimelineContent,
-  writeTimelineContent,
-  readCharacterRelationsContent,
-  writeCharacterRelationsContent,
-  readInspirationsContent,
-  writeInspirationsContent,
-  readReferencesContent,
-  writeReferencesContent,
-  readWritingLogsContent,
-  writeWritingLogsContent,
-  readProjectMD,
-  readCharacterMD,
-  saveCharactersMD,
-  readCharactersContent,
-  writeCharactersContent,
-  saveWorldSettingsMD,
-  readWorldSettingsContent,
-  writeWorldSettingsContent,
-  saveLocationsMD,
-  readLocationsContent,
-  writeLocationsContent,
-  parseCharactersFromMD,
-  parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
-} from '../markdownStorage'
-import { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
+
+
+import { ensureModel } from './helpers'
 
 
 
@@ -144,6 +67,7 @@ interface GenerateAssetRequest {
   count?: number // 批量生成数量
   providerId?: string // 可选：指定供应商，不传则用活跃供应商
   model?: string // 可选：指定模型，不传则用供应商保存的模型
+  requestId?: string // 可选：用于中止生成
 }
 
 
@@ -276,16 +200,23 @@ export function registerAIAssetHandlers(): void {
     const { system, user } = buildAssetPrompt(req)
 
     let result: string
-    if (provider.type === 'ollama') {
-      result = await chatOllama(provider, model, [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ])
-    } else {
-      result = await chatOpenAI(provider, model, [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ])
+    const rid = req.requestId || randomUUID()
+    const abortController = new AbortController()
+    registerAbortController(rid, abortController)
+    try {
+      if (provider.type === 'ollama') {
+        result = await chatOllama(provider, model, [
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ], undefined, abortController.signal)
+      } else {
+        result = await chatOpenAI(provider, model, [
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ], abortController.signal)
+      }
+    } finally {
+      releaseAbortController(rid)
     }
 
     // chapter-outline 返回纯文本大纲，不做 JSON 解析

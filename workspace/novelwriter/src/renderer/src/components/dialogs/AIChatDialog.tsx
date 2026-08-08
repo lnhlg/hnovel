@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Send, Loader2, Check, MessageSquare, Sparkles, ChevronDown, Copy, RotateCw, Square } from 'lucide-react'
-import { useAppStore, type Character, type WorldSetting, type Location, type Timeline, type CharacterRelation, type Inspiration, type Reference } from '../../store/app'
+import { useAppStore } from '../../store/app'
 import ModelSelector from '../ModelSelector'
 
 interface ChatMessage {
@@ -232,7 +232,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
         return worldSettings.map(s => `- ${s.key}（${s.category || '-'}）`).join('\n')
       case 'location':
         return locations.map(l => `- ${l.name}（${l.type || '-'}）`).join('\n')
-      case 'chapterOutline':
+      case 'chapterOutline': {
         const cp: string[] = []
         // 当前章信息
         const curChapter = chapterId ? chapters.find(c => c.id === chapterId) : null
@@ -334,6 +334,7 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
           cp.push(`【人物关联】\n${assocEntries.sort((a, b) => a.chOrder - b.chOrder).map(i => i.text).join('\n')}`)
         }
         return cp.join('\n\n')
+      }
       default:
         return ''
     }

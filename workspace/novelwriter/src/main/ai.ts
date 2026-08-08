@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { AIProvider, loadAIProviders, saveAIProvider, deleteAIProvider as deleteAIProviderFile } from './fileStorage'
+import { validateOrThrow, aiChatOptionsSchema } from './ipcValidation'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -157,7 +158,6 @@ export async function chatOpenAIStream(
 
     // 将本次数据与前次未处理完的残余拼接
     const text = remainder + decoder.decode(value, { stream: true })
-    remainder = ''
 
     // 按行分割，保留最后一段不完整的行给下次处理
     const splitIdx = text.lastIndexOf('\n')
@@ -540,6 +540,7 @@ export function registerAIHandlers(): void {
 
   // AI 聊天（默认用活跃供应商，可通过 options.providerId 临时切换到任意供应商，options.model 切换模型）
   ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max'; requestId?: string }) => {
+    validateOrThrow(aiChatOptionsSchema, options ?? {}, 'ai:chat options')
     const window = BrowserWindow.fromWebContents(event.sender)
     const isStream = options?.stream ?? false
     const reasoningEffort = options?.reasoningEffort

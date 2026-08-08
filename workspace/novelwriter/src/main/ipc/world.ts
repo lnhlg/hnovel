@@ -1,13 +1,8 @@
 import { randomUUID } from 'crypto'
-import { ipcMain, dialog, BrowserWindow } from 'electron'
-import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { join } from 'path'
-import {
-  Project, Chapter, Character, WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference, WritingStyle, Skill,
-  loadProjects, saveProject, deleteProject, loadProjectById,
-  loadStoryProgress, saveStoryProgress,
-  loadChapters, saveChapter, deleteChapter,
-  loadCharacters, saveCharacter, deleteCharacter,
+import { ipcMain } from 'electron'
+import { WorldSetting, Timeline, Location, Item, Dialogue, CharacterRelation, Inspiration, WritingLog, Reference,
+  loadProjects, loadProjectById,
+  loadCharacters,
   loadWorldSettings, saveWorldSetting, deleteWorldSetting,
   loadTimelines, saveTimeline, deleteTimeline,
   loadLocations, saveLocation, deleteLocation,
@@ -17,33 +12,13 @@ import {
   loadCharacterPositions, saveCharacterPositions,
   loadInspirations, saveInspiration, deleteInspiration,
   loadWritingLogs, saveWritingLog, deleteWritingLog,
-  loadReferences, saveReference, deleteReference,
-  loadWritingStyles, saveWritingStyle, deleteWritingStyle, getNextWritingStyleSortOrder,
-  loadSkills, saveSkill, deleteSkill, getNextSkillSortOrder,
-  loadAIProviders
+  loadReferences, saveReference, deleteReference
 } from '../fileStorage'
+
+
 import {
-  getActiveProvider,
-  getCurrentModel,
-  setCurrentModel,
-  chatOpenAI,
-  chatOpenAIStream,
-  chatOllama,
-  loadActiveProvider,
-  listOpenAIModels,
-  listOllamaModels
-} from '../ai'
-import type { ChatMessage } from '../ai'
-import type { AIProvider } from '../fileStorage'
-import {
-  ensureProjectDirs,
-  saveProjectMD,
-  saveCharacterMD,
-  deleteCharacterMD,
   saveWorldSettingMD,
   deleteWorldSettingMD,
-  saveChapterMD,
-  deleteChapterMD,
   saveTimelineMD,
   saveLocationMD,
   deleteLocationMD,
@@ -51,46 +26,11 @@ import {
   saveInspirationsMD,
   saveReferencesMD,
   saveWritingLogsMD,
-  saveAllProjectDataMD,
-  readProjectContent,
-  writeProjectContent,
-  readCharacterContent,
-  writeCharacterContent,
-  readChapterContent,
-  writeChapterContent,
-  readWorldSettingContent,
-  writeWorldSettingContent,
-  readLocationContent,
-  writeLocationContent,
-  readTimelineContent,
-  writeTimelineContent,
-  readCharacterRelationsContent,
-  writeCharacterRelationsContent,
-  readInspirationsContent,
-  writeInspirationsContent,
-  readReferencesContent,
-  writeReferencesContent,
-  readWritingLogsContent,
-  writeWritingLogsContent,
-  readProjectMD,
-  readCharacterMD,
-  saveCharactersMD,
-  readCharactersContent,
-  writeCharactersContent,
   saveWorldSettingsMD,
-  readWorldSettingsContent,
-  writeWorldSettingsContent,
-  saveLocationsMD,
-  readLocationsContent,
-  writeLocationsContent,
-  parseCharactersFromMD,
-  parseWorldSettingsFromMD,
-  parseLocationsFromMD,
-  stripChapterTitle,
-  saveStoryProgressMD,
-  readStoryProgressMD
+  saveLocationsMD
 } from '../markdownStorage'
-import { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
+import { now } from './helpers'
+import { validateOrThrow, worldSettingSaveSchema, timelineSaveSchema, locationSaveSchema, itemSaveSchema, dialogueSaveSchema, relationSaveSchema, inspirationSaveSchema, referenceSaveSchema } from '../ipcValidation'
 
 
 
@@ -103,6 +43,7 @@ export function registerWorldSettingsHandlers(): void {
   })
 
   ipcMain.handle('worldSettings:save', (_event, data: Partial<WorldSetting> & { projectId: string }) => {
+    validateOrThrow(worldSettingSaveSchema, data, 'worldSettings:save')
     const time = now()
     const project = loadProjectById(data.projectId)
 
@@ -187,6 +128,7 @@ export function registerTimelineHandlers(): void {
   })
 
   ipcMain.handle('timeline:save', (_event, data: Partial<Timeline> & { projectId: string }) => {
+    validateOrThrow(timelineSaveSchema, data, 'timeline:save')
     const time = now()
     const project = loadProjectById(data.projectId)
 
@@ -265,6 +207,7 @@ export function registerLocationHandlers(): void {
   })
 
   ipcMain.handle('location:save', (_event, data: Partial<Location> & { projectId: string }) => {
+    validateOrThrow(locationSaveSchema, data, 'location:save')
     const time = now()
     const project = loadProjectById(data.projectId)
 
@@ -337,6 +280,7 @@ export function registerItemHandlers(): void {
   })
 
   ipcMain.handle('item:save', (_event, data: Partial<Item> & { projectId: string }) => {
+    validateOrThrow(itemSaveSchema, data, 'item:save')
     const time = now()
     const existing = data.id ? loadItems(data.projectId).find(i => i.id === data.id) : null
 
@@ -396,6 +340,7 @@ export function registerDialogueHandlers(): void {
   })
 
   ipcMain.handle('dialogue:save', (_event, data: Partial<Dialogue> & { projectId: string }) => {
+    validateOrThrow(dialogueSaveSchema, data, 'dialogue:save')
     const time = now()
     const existing = data.id ? loadDialogues(data.projectId).find(d => d.id === data.id) : null
     if (existing) {
@@ -430,6 +375,7 @@ export function registerCharacterRelationHandlers(): void {
   })
 
   ipcMain.handle('characterRelation:save', (_event, data: Partial<CharacterRelation> & { projectId: string }) => {
+    validateOrThrow(relationSaveSchema, data, 'characterRelation:save')
     const time = now()
     const project = loadProjectById(data.projectId)
 
@@ -516,6 +462,7 @@ export function registerInspirationHandlers(): void {
   })
 
   ipcMain.handle('inspiration:save', (_event, data: Partial<Inspiration> & { projectId: string }) => {
+    validateOrThrow(inspirationSaveSchema, data, 'inspiration:save')
     const time = now()
     const project = loadProjectById(data.projectId)
 
@@ -638,6 +585,7 @@ export function registerReferenceHandlers(): void {
   })
 
   ipcMain.handle('reference:save', (_event, data: Partial<Reference> & { projectId: string }) => {
+    validateOrThrow(referenceSaveSchema, data, 'reference:save')
     const time = now()
     const project = loadProjectById(data.projectId)
 

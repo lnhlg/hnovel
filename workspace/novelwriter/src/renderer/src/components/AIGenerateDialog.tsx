@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Square } from 'lucide-react'
 import { useAppStore } from '../store/app'
 import ModelSelector from './ModelSelector'
 
@@ -7,7 +7,7 @@ interface AIGenerateDialogProps {
   title: string
   chapterTitle: string
   onClose: () => void
-  onStart: () => Promise<void>
+  onStart: (requestId: string) => Promise<void>
 }
 
 function AIGenerateDialog({ title, chapterTitle, onClose, onStart }: AIGenerateDialogProps): JSX.Element {
@@ -23,24 +23,39 @@ function AIGenerateDialog({ title, chapterTitle, onClose, onStart }: AIGenerateD
   const [errorMsg, setErrorMsg] = useState('')
   const [showEffortDropdown, setShowEffortDropdown] = useState(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+  const requestIdRef = useRef<string | null>(null)
+  const stoppedRef = useRef(false)
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [log])
 
   const handleStart = async (): Promise<void> => {
+    stoppedRef.current = false
+    const requestId = `gen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    requestIdRef.current = requestId
     setStatus('generating')
     setLog((prev) => [...prev, `⏳ 开始生成「${chapterTitle}」...`])
     try {
-      await onStart()
+      await onStart(requestId)
+      if (stoppedRef.current) return
       setLog((prev) => [...prev, '✅ 生成完成！'])
       setStatus('done')
     } catch (err) {
+      if (stoppedRef.current) return
       const msg = err instanceof Error ? err.message : '未知错误'
       setLog((prev) => [...prev, `❌ 生成失败: ${msg}`])
       setErrorMsg(msg)
       setStatus('error')
     }
+  }
+
+  const handleStop = (): void => {
+    stoppedRef.current = true
+    window.api.aiAbort?.(requestIdRef.current ?? undefined)
+    requestIdRef.current = null
+    setLog((prev) => [...prev, '⏹ 已停止生成'])
+    setStatus('ready')
   }
 
   return (
@@ -104,8 +119,9 @@ function AIGenerateDialog({ title, chapterTitle, onClose, onStart }: AIGenerateD
             </button>
           )}
           {status === 'generating' && (
-            <button disabled className="rounded px-4 py-1.5 text-xs" style={{ backgroundColor: 'var(--color-border)', color: 'var(--color-text-dim)', border: 'none', cursor: 'not-allowed' }}>
-              生成中...
+            <button onClick={handleStop}
+              className="flex items-center gap-1 rounded px-4 py-1.5 text-xs" style={{ backgroundColor: 'var(--color-danger)', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              <Square size={12} /> 停止生成
             </button>
           )}
           {status === 'ready' && (
