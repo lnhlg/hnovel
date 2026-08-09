@@ -149,7 +149,17 @@ const api = {
   readDoc: (projectId: string, docType: string, entityId: string) =>
     ipcRenderer.invoke('doc:read', projectId, docType, entityId),
   saveDoc: (projectId: string, docType: string, entityId: string, content: string) =>
-    ipcRenderer.invoke('doc:save', projectId, docType, entityId, content)
+    ipcRenderer.invoke('doc:save', projectId, docType, entityId, content),
+
+  // 索引与搜索
+  rebuildIndex: (projectId: string) => ipcRenderer.invoke('index:rebuild', projectId),
+  searchIndex: (projectId: string, query: string, options?: unknown) =>
+    ipcRenderer.invoke('index:search', projectId, query, options),
+
+  // 伏笔线
+  listForeshadows: (projectId: string) => ipcRenderer.invoke('foreshadow:list', projectId),
+  saveForeshadow: (projectId: string, data: unknown) => ipcRenderer.invoke('foreshadow:save', projectId, data),
+  deleteForeshadow: (projectId: string, id: string) => ipcRenderer.invoke('foreshadow:delete', projectId, id)
 }
 
 contextBridge.exposeInMainWorld('api', api)

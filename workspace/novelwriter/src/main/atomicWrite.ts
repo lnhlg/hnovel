@@ -23,3 +23,18 @@ export function atomicWriteFile(path: string, content: string): void {
 export function atomicWriteJson(path: string, data: unknown): void {
   atomicWriteFile(path, JSON.stringify(data, null, 2))
 }
+
+// 二进制原子写（用于 sql.js 索引库文件）
+export function atomicWriteBuffer(path: string, data: Uint8Array): void {
+  ensureDir(dirname(path))
+  const tmpPath = `${path}.${Date.now()}.tmp`
+  try {
+    writeFileSync(tmpPath, data)
+    renameSync(tmpPath, path)
+  } catch (err) {
+    try {
+      if (existsSync(tmpPath)) unlinkSync(tmpPath)
+    } catch { /* ignore */ }
+    throw err
+  }
+}
