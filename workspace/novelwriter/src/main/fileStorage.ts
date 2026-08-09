@@ -3,6 +3,7 @@ import { join, dirname } from 'path'
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, copyFileSync, unlinkSync } from 'fs'
 import { atomicWriteJson } from './atomicWrite'
 import { backupProjectData } from './projectBackup'
+import { readChapterContent } from './markdownStorage'
 
 // ===================== 类型定义 =====================
 
@@ -414,6 +415,14 @@ function readChapterContentFile(projectId: string, chapterId: string): string {
 
 export function loadChapters(projectId: string): Chapter[] {
   const items = storeFor<Chapter>(projectId, 'chapters.json').load()
+  const project = loadProjectById(projectId)
+  // 正文事实源：有项目路径的项目从书稿目录 MD 读取；无路径项目回退按章 JSON 文件
+  const mergeContent = (c: Chapter): Chapter => {
+    if (project?.path) {
+      return { ...c, content: readChapterContent(project.path, c.sortOrder, c.title) }
+    }
+    return { ...c, content: readChapterContentFile(projectId, c.id) }
+  }
   const needsMigration = items.some(c => c.content)
   if (needsMigration) {
     // 旧版把全部章节正文存在 chapters.json 里；迁移为按章独立文件，索引只保留元数据
@@ -440,19 +449,23 @@ export function loadChapters(projectId: string): Chapter[] {
         } catch { /* ignore */ }
       }
       writeJson(join(dir, 'chapters.json'), migrated)
-      return migrated.map(c => ({ ...c, content: readChapterContentFile(projectId, c.id) }))
+      return migrated.map(mergeContent)
     }
   }
-  return items.map(c => ({ ...c, content: readChapterContentFile(projectId, c.id) }))
+  return items.map(mergeContent)
 }
 
 export function saveChapter(projectId: string, chapter: Chapter): Chapter {
   const content = chapter.content ?? ''
-  // 先写正文文件，再更新索引（索引只存元数据，避免每次保存都重写全量章节正文）
-  const path = chapterContentPath(projectId, chapter.id)
-  if (path) {
-    ensureDir(dirname(path))
-    writeJson(path, { content })
+  const project = loadProjectById(projectId)
+  // 有项目路径时正文只写书稿目录 MD（由 saveChapterWithMd 负责），JSON 不再存正文；
+  // 无路径项目仍写按章 JSON 文件
+  if (!project?.path) {
+    const path = chapterContentPath(projectId, chapter.id)
+    if (path) {
+      ensureDir(dirname(path))
+      writeJson(path, { content })
+    }
   }
   const saved = storeFor<Chapter>(projectId, 'chapters.json').upsert({ ...chapter, content: '' })
   return { ...saved, content }

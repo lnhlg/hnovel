@@ -105,3 +105,19 @@ export function registerSearchHandlers(): void {
     }
   })
 }
+
+/** 从书稿目录全量重建项目索引（保存章节后由写路径调用，索引允许滞后） */
+export async function rebuildProjectIndex(projectId: string): Promise<{ success: boolean; count: number }> {
+  const project = loadProjectById(projectId)
+  if (!project?.path) return { success: false, count: 0 }
+  const dbPath = join(project.path, '.novelwriter', 'index.db')
+  const db = await openIndex(dbPath)
+  try {
+    const docs = collectIndexableDocs(project.path)
+    rebuildSearchIndex(db, docs)
+    saveIndex(db, dbPath)
+    return { success: true, count: docs.length }
+  } finally {
+    db.close()
+  }
+}

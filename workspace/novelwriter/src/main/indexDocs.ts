@@ -25,7 +25,8 @@ function collectDir(projectPath: string, dir: string, out: IndexedDoc[]): void {
       collectDir(projectPath, full, out)
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
       const rel = relative(projectPath, full)
-      const kind = basename(dirname(full))
+      const isRoot = dirname(full) === projectPath
+      const kind = isRoot ? '根目录' : basename(dirname(full))
       const title = basename(full, '.md')
       const orderMatch = title.match(/^(\d+)[.\s-_]/)
       let body = ''

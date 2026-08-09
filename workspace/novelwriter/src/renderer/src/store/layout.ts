@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type SidebarView = 'project' | 'characters' | 'outline' | 'world' | 'timeline' | 'locations' | 'relations' | 'inspirations' | 'logs' | 'references' | 'writingStyles' | 'skills'
 
-export type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs' | 'writingStyles' | 'skills' | 'memoryGraph'
+export type DocType = 'project' | 'chapter' | 'character' | 'characters' | 'worldSetting' | 'worldSettings' | 'timeline' | 'location' | 'locations' | 'characterRelations' | 'inspirations' | 'references' | 'writingLogs' | 'writingStyles' | 'skills' | 'memoryGraph' | 'search' | 'foreshadows'
 
 export interface OpenDoc {
   id: string

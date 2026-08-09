@@ -16,6 +16,8 @@ import WritingLogsPanel from './components/WritingLogsPanel'
 import ReferencesPanel from './components/ReferencesPanel'
 import WritingStylesPanel from './components/WritingStylesPanel'
 import SkillsPanel from './components/SkillsPanel'
+import SearchPanel from './components/SearchPanel'
+import ForeshadowsPanel from './components/ForeshadowsPanel'
 import RightToolbar from './components/layout/RightToolbar'
 import StatusBar from './components/layout/StatusBar'
 import Sidebar from './components/layout/Sidebar'
@@ -290,6 +292,10 @@ function App(): JSX.Element {
                     <WritingStylesPanel />
                   ) : activeDoc.type === 'skills' ? (
                     <SkillsPanel />
+                  ) : activeDoc.type === 'search' ? (
+                    <SearchPanel />
+                  ) : activeDoc.type === 'foreshadows' ? (
+                    <ForeshadowsPanel />
                   ) : activeDoc.type === 'project' ? (
                     <OutlinePanel />
                   ) : (

@@ -1,10 +1,12 @@
-import { PenTool, BookOpen, Settings } from 'lucide-react'
+import { PenTool, BookOpen, Settings, Search, Link2 } from 'lucide-react'
 import { useLayoutStore, type DocType } from '../../store/layout'
 import { useAISettingsStore } from '../../store/aiSettings'
 
 const tools = [
   { id: 'writingStyles' as const, icon: PenTool, label: '写作风格', docType: 'writingStyles' as const, entityId: 'writingStyles' },
   { id: 'skills' as const, icon: BookOpen, label: '写作技能', docType: 'skills' as const, entityId: 'skills' },
+  { id: 'search' as const, icon: Search, label: '全书搜索', docType: 'search' as const, entityId: 'search' },
+  { id: 'foreshadows' as const, icon: Link2, label: '伏笔线', docType: 'foreshadows' as const, entityId: 'foreshadows' },
 ]
 
 export default function RightToolbar(): JSX.Element {

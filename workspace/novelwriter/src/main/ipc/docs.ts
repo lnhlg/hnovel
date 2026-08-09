@@ -55,6 +55,7 @@ import {
   parseLocationsFromMD
 } from '../markdownStorage'
 import { now, extractTitleFromBody, saveChapterWithMd } from './helpers'
+import { rebuildProjectIndex } from './search'
 import { parseCharacterFromContent } from './assets'
 
 
@@ -259,6 +260,7 @@ export function registerDocHandlers(): void {
           outline: newOutline,
           wordCount: newContent.length
         })
+        void rebuildProjectIndex(projectId).catch(console.error)
         return { success: true, newTitle: saved.title }
       }
       case 'character': {
