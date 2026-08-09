@@ -914,11 +914,16 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       if (textareaRef.current && subTab === 'content') {
         textareaRef.current.value = content
       }
+      // 同步到 layout store：否则顶部「保存」按钮会用空内容覆盖刚生成的正文
+      const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+      setDocContent(doc.id, full)
+      setDocDirty(doc.id, true)
+      dirtyRef.current = true
       await window.api.saveChapter({
         id: chapter.id,
         projectId: currentProject.id,
         title: chapter.title,
-        content,
+        content: full,
         outline
       })
     }
@@ -1247,6 +1252,9 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
             const ch = useAppStore.getState().chapters.find(c => c.id === doc.entityId)
             if (ch?.outline && ch.outline !== outlineRef.current) {
               outlineRef.current = ch.outline
+              // 同步到 layout store，避免顶部「保存」按钮用旧内容覆盖
+              const full = buildChapter(preambleRef.current, outlineRef.current, contentRef.current)
+              setDocContent(doc.id, full)
               if (textareaRef.current && subTab === 'outline') {
                 textareaRef.current.value = ch.outline
               }

@@ -232,6 +232,10 @@ export function registerDocHandlers(): void {
         const chapters = loadChapters(projectId).sort((a, b) => a.sortOrder - b.sortOrder)
         const chapter = chapters.find(c => c.id === entityId)
         if (!chapter) return { success: false }
+        // 防御：空内容很可能是布局 store 未同步（如 AI 生成后未刷新），阻止覆盖已有正文
+        if (!content.trim()) {
+          return { success: false, error: '内容为空，未保存' }
+        }
 
         const titleMatch = content.match(/^#\s+(.+)/m)
         const outlineMatch = content.match(/## 本章概要\r?\n([\s\S]*?)(?=\r?\n## |\r?\n$)/)
