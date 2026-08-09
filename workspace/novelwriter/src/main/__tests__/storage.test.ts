@@ -1,9 +1,19 @@
-import { describe, it, expect } from 'vitest'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { atomicWriteFile } from '../atomicWrite'
-import { stripChapterTitle, parseCharactersFromMD, parseWorldSettingsFromMD, parseLocationsFromMD } from '../markdownStorage'
+import { stripChapterTitle, parseCharactersFromMD, parseWorldSettingsFromMD, parseLocationsFromMD, saveChapterMD, normalizeChapterMD } from '../markdownStorage'
+
+let root: string
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'novelwriter-storage-'))
+})
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true })
+})
 
 describe('stripChapterTitle', () => {
   it('去除中文章节编号前缀', () => {
@@ -124,5 +134,72 @@ describe('atomicWriteFile', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('saveChapterMD / normalizeChapterMD', () => {
+  const chapter = {
+    id: 'c1',
+    projectId: 'p1',
+    title: '第一章 测试',
+    content: '# 第一章 测试\n\n## 本章概要\n\n原始章纲\n\n## 正文内容\n\n第一段正文',
+    outline: '章纲A',
+    sortOrder: 0,
+    wordCount: 0,
+    status: '草稿',
+    draftVersion: 1,
+    storyProgressSynced: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+
+  it('saveChapterMD 不重复嵌入章纲与标题', () => {
+    const projectPath = join(root, 'proj-save')
+    mkdirSync(projectPath, { recursive: true })
+    saveChapterMD(projectPath, chapter, 0)
+    const md = readFileSync(join(projectPath, '章节', '1. 测试.md'), 'utf-8')
+    expect((md.match(/## 本章概要/g) || []).length).toBe(1)
+    expect((md.match(/## 正文内容/g) || []).length).toBe(1)
+    expect(md).toContain('章纲A')
+    expect(md).toContain('第一段正文')
+  })
+
+  it('normalizeChapterMD 消除历史重复文件', () => {
+    const projectPath = join(root, 'proj-normalize')
+    mkdirSync(join(projectPath, '章节'), { recursive: true })
+    const duplicated = `# 1. 测试
+
+> 创建时间：2026
+> 更新时间：2026
+> ID：c1
+> 状态：草稿
+> 字数：0
+
+## 本章概要
+
+章纲A
+
+## 正文内容
+
+# 第一章 测试
+
+> 更新时间：2026
+
+## 本章概要
+
+章纲A
+
+## 正文内容
+
+第一段正文
+`
+    writeFileSync(join(projectPath, '章节', '1. 测试.md'), duplicated, 'utf-8')
+
+    normalizeChapterMD(projectPath, chapter, 0)
+    const md = readFileSync(join(projectPath, '章节', '1. 测试.md'), 'utf-8')
+    expect((md.match(/## 本章概要/g) || []).length).toBe(1)
+    expect((md.match(/## 正文内容/g) || []).length).toBe(1)
+    expect(md).toContain('第一段正文')
+    expect(md).toContain('章纲A')
   })
 })

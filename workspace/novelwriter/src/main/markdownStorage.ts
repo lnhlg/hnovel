@@ -338,6 +338,11 @@ export function saveChapterMD(projectPath: string, chapter: Chapter, index: numb
   const dir = join(projectPath, DIRS.chapters)
   const cleanTitle = stripChapterTitle(chapter.title)
   const fileName = `${index + 1}. ${safeFileName(cleanTitle || '无标题')}.md`
+  // chapter.content 可能是完整文档（含 # 标题 / ## 本章概要 / ## 正文内容），
+  // 标准 MD 只取正文段，避免标题与章纲重复
+  const fullContent = chapter.content || ''
+  const contentMatch = fullContent.match(/## 正文内容\r?\n([\s\S]*?)$/)
+  const body = contentMatch ? contentMatch[1].trim() : fullContent.trim()
 
   const content = `# ${index + 1}. ${cleanTitle}
 
@@ -353,10 +358,30 @@ ${chapter.outline || '暂无概要'}
 
 ## 正文内容
 
-${chapter.content || '暂无内容'}
+${body || '暂无内容'}
 `
   
   writeFileSync(join(dir, fileName), content, 'utf-8')
+}
+
+/**
+ * 规范化章节 MD：把历史文件里重复嵌入的完整文档剥成「标准格式（元信息 + 章纲 + 正文段）」。
+ * 幂等：已规范化的文件重复执行结果不变。
+ */
+export function normalizeChapterMD(projectPath: string, chapter: Chapter, index: number): void {
+  if (!projectPath) return
+  const dir = join(projectPath, DIRS.chapters)
+  const cleanTitle = stripChapterTitle(chapter.title)
+  const fileName = `${index + 1}. ${safeFileName(cleanTitle || '无标题')}.md`
+  const filePath = join(dir, fileName)
+  if (!existsSync(filePath)) return
+
+  const md = readFileSync(filePath, 'utf-8')
+  const lastIdx = md.lastIndexOf('## 正文内容')
+  const body = lastIdx >= 0
+    ? md.slice(lastIdx + '## 正文内容'.length).replace(/^\r?\n/, '').trim()
+    : md.trim()
+  saveChapterMD(projectPath, { ...chapter, content: body }, index)
 }
 
 export function deleteChapterMD(projectPath: string, title: string, index: number): void {

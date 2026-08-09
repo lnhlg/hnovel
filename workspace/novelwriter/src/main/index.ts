@@ -4,7 +4,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { initStorage } from './fileStorage'
 import { registerProjectHandlers, registerChapterHandlers, registerCharacterHandlers, registerDialogHandlers, registerAIOutlineHandlers, registerAIWizardHandlers, registerWorldSettingsHandlers, registerTimelineHandlers, registerLocationHandlers, registerItemHandlers, registerDialogueHandlers, registerCharacterRelationHandlers, registerInspirationHandlers, registerWritingLogHandlers, registerReferenceHandlers, registerAIAssetHandlers, registerDocHandlers, registerWritingStyleHandlers, registerSkillHandlers, registerSearchHandlers } from './ipc'
 import { registerAIHandlers, loadActiveProvider } from './ai'
-import { migrateAllProjects } from './storageMigration'
+import { migrateAllProjects, normalizeAllProjects } from './storageMigration'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -42,6 +42,8 @@ app.whenReady().then(async () => {
   await initStorage()
   // 一次性迁移：JSON 实体写入书稿目录（迁移前强制备份）
   await migrateAllProjects()
+  // 一次性规范化：消除章节 MD 里重复嵌入的章纲/标题
+  await normalizeAllProjects()
   // 去除默认菜单栏
   Menu.setApplicationMenu(null)
   // 加载活跃的 AI 供应商配置
