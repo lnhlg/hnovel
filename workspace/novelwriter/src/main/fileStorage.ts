@@ -4,6 +4,7 @@ import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, copyFileSync,
 import { atomicWriteJson } from './atomicWrite'
 import { backupProjectData } from './projectBackup'
 import { readChapterContent } from './markdownStorage'
+import type { Foreshadow } from './indexStore'
 
 // ===================== 类型定义 =====================
 
@@ -613,6 +614,25 @@ export function saveReference(projectId: string, reference: Reference): Referenc
 
 export function deleteReference(projectId: string, id: string): void {
   storeFor<Reference>(projectId, 'references.json').delete(id)
+}
+
+// ===================== 伏笔线（持久化到 JSON，index.db 仅作查询缓存） =====================
+
+export function hasForeshadowRecords(projectId: string): boolean {
+  const path = entityPath(projectId, 'foreshadows.json')
+  return !!path && existsSync(path)
+}
+
+export function loadForeshadowRecords(projectId: string): Foreshadow[] {
+  return storeFor<Foreshadow>(projectId, 'foreshadows.json').load()
+}
+
+export function saveForeshadowRecord(projectId: string, f: Foreshadow): Foreshadow {
+  return storeFor<Foreshadow>(projectId, 'foreshadows.json').upsert(f)
+}
+
+export function deleteForeshadowRecord(projectId: string, id: string): void {
+  storeFor<Foreshadow>(projectId, 'foreshadows.json').delete(id)
 }
 
 // ===================== 写作风格（全局） =====================

@@ -1,15 +1,19 @@
 import { ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { join } from 'path'
-import { loadProjectById } from '../fileStorage'
+import {
+  loadProjectById,
+  hasForeshadowRecords,
+  loadForeshadowRecords,
+  saveForeshadowRecord,
+  deleteForeshadowRecord
+} from '../fileStorage'
 import {
   openIndex,
   saveIndex,
   rebuildSearchIndex,
   searchIndex,
-  listForeshadows,
-  saveForeshadow,
-  deleteForeshadow
+  listForeshadows
 } from '../indexStore'
 import type { SearchOptions, Foreshadow } from '../indexStore'
 import { collectIndexableDocs } from '../indexDocs'
@@ -58,51 +62,43 @@ export function registerSearchHandlers(): void {
   })
 
   ipcMain.handle('foreshadow:list', async (_event, projectId: string) => {
-    const dbPath = indexPathFor(projectId)
-    if (!dbPath) return []
-    const db = await openIndex(dbPath)
-    try {
-      return listForeshadows(db)
-    } finally {
-      db.close()
+    // 持久化源：项目数据 foreshadows.json；首次迁移旧索引里的伏笔线
+    if (hasForeshadowRecords(projectId)) {
+      return loadForeshadowRecords(projectId)
     }
+    const dbPath = indexPathFor(projectId)
+    if (dbPath) {
+      const db = await openIndex(dbPath)
+      try {
+        const legacy = listForeshadows(db)
+        for (const f of legacy) saveForeshadowRecord(projectId, f)
+        return legacy
+      } finally {
+        db.close()
+      }
+    }
+    return []
   })
 
   ipcMain.handle('foreshadow:save', async (_event, projectId: string, data: Partial<Foreshadow> & { id?: string }) => {
-    const dbPath = indexPathFor(projectId)
-    if (!dbPath) throw new Error('项目不存在或未设置路径')
-    const db = await openIndex(dbPath)
-    try {
-      const now = new Date().toISOString()
-      const f: Foreshadow = {
-        id: data.id ?? randomUUID(),
-        title: data.title ?? '未命名伏笔线',
-        status: data.status ?? 'planted',
-        chapterId: data.chapterId,
-        marker: data.marker,
-        notes: data.notes,
-        createdAt: data.createdAt ?? now,
-        updatedAt: now
-      }
-      saveForeshadow(db, f)
-      saveIndex(db, dbPath)
-      return f
-    } finally {
-      db.close()
+    const now = new Date().toISOString()
+    const f: Foreshadow = {
+      id: data.id ?? randomUUID(),
+      title: data.title ?? '未命名伏笔线',
+      status: data.status ?? 'planted',
+      chapterId: data.chapterId,
+      marker: data.marker,
+      notes: data.notes,
+      createdAt: data.createdAt ?? now,
+      updatedAt: now
     }
+    saveForeshadowRecord(projectId, f)
+    return f
   })
 
   ipcMain.handle('foreshadow:delete', async (_event, projectId: string, id: string) => {
-    const dbPath = indexPathFor(projectId)
-    if (!dbPath) return { success: true }
-    const db = await openIndex(dbPath)
-    try {
-      deleteForeshadow(db, id)
-      saveIndex(db, dbPath)
-      return { success: true }
-    } finally {
-      db.close()
-    }
+    deleteForeshadowRecord(projectId, id)
+    return { success: true }
   })
 }
 
