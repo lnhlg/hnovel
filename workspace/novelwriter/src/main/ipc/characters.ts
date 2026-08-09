@@ -25,6 +25,8 @@ export function registerCharacterHandlers(): void {
     validateOrThrow(characterSaveSchema, data, 'character:save')
     const time = now()
     const project = loadProjectById(data.projectId)
+    // AI 可能返回字符串年龄，统一归一化为数字
+    const normalizedAge = typeof data.age === 'string' ? (parseInt(data.age, 10) || 0) : data.age
 
     const existing = data.id ? loadCharacters(data.projectId).find(c => c.id === data.id) : null
 
@@ -34,7 +36,7 @@ export function registerCharacterHandlers(): void {
         name: data.name ?? existing.name,
         description: data.description ?? existing.description,
         traits: data.traits ?? existing.traits,
-        age: data.age ?? existing.age,
+        age: normalizedAge ?? existing.age,
         appearance: data.appearance ?? existing.appearance,
         background: data.background ?? existing.background,
         personality: data.personality ?? existing.personality,
@@ -77,7 +79,7 @@ export function registerCharacterHandlers(): void {
       const character: Character = {
         id, projectId: data.projectId,
         name: data.name ?? '', description: data.description ?? '',
-        traits: data.traits ?? '', age: data.age ?? 0,
+        traits: data.traits ?? '', age: normalizedAge ?? 0,
         appearance: data.appearance ?? '', background: data.background ?? '',
         personality: data.personality ?? '', role: data.role ?? '',
         skills: data.skills ?? '', relationships: data.relationships ?? '',

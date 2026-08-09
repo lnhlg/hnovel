@@ -97,6 +97,17 @@ export default function Sidebar(): JSX.Element {
 
   const handleSelectProject = async (project: typeof currentProject): Promise<void> => {
     if (!project) return
+    // 切换项目前保存所有未保存的文档（用当前项目 id），避免切换时丢失编辑
+    const layout = useLayoutStore.getState()
+    const dirtyDocs = layout.openDocs.filter(d => d.dirty)
+    if (dirtyDocs.length > 0 && currentProject) {
+      for (const d of dirtyDocs) {
+        try {
+          const result = await window.api.saveDoc?.(currentProject.id, d.type, d.entityId, d.content)
+          if (result?.success) layout.setDocDirty(d.id, false)
+        } catch { /* 单个保存失败不阻断切换 */ }
+      }
+    }
     setCurrentProject(project)
     await loadChapters(project.id)
     await loadCharacters(project.id)

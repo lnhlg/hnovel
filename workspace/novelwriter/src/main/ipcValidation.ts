@@ -40,7 +40,7 @@ export const characterSaveSchema = z.object({
   name: optStr,
   description: optStr,
   traits: optStr,
-  age: optNum,
+  age: z.union([z.number(), z.string()]).optional(),
   appearance: optStr,
   background: optStr,
   personality: optStr,

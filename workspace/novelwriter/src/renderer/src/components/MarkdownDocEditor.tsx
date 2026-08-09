@@ -51,6 +51,7 @@ export default function MarkdownDocEditor({ doc }: MarkdownDocEditorProps): JSX.
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
     const newContent = e.target.value
     setDocContent(doc.id, newContent)
+    setDocDirty(doc.id, true)
 
     const firstLine = newContent.split('\n')[0]
     const titleMatch = firstLine.match(/^#\s+(.+)/)
