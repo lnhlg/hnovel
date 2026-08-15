@@ -33,6 +33,8 @@ interface AISettingsPanelProps {
 
 function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
   const [providers, setProviders] = useState<AIProvider[]>([])
+  const [loadingProviders, setLoadingProviders] = useState(true)
+  const [loadProvidersError, setLoadProvidersError] = useState('')
   const [currentModel, setCurrentModel] = useState('')
   const [editingProvider, setEditingProvider] = useState<Partial<AIProvider> | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -41,19 +43,31 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
   const [testingConnection, setTestingConnection] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
 
-  const loadProviders = async (): Promise<void> => {
-    const result = await window.api.listProviders?.()
-    if (result && Array.isArray(result)) {
-      setProviders(result)
+  const loadProviders = useCallback(async (): Promise<void> => {
+    setLoadingProviders(true)
+    setLoadProvidersError('')
+    try {
+      const result = await window.api.listProviders?.()
+      if (result && Array.isArray(result)) {
+        setProviders(result)
+      } else {
+        setLoadProvidersError('接口返回异常')
+      }
+    } catch (err) {
+      // 加载失败时保留已有列表，仅提示错误；列表为空时错误会展示在空态区域
+      console.error('加载供应商列表失败:', err)
+      setLoadProvidersError(err instanceof Error ? err.message : '加载供应商列表失败')
+    } finally {
+      setLoadingProviders(false)
     }
-  }
+  }, [])
 
-  const loadCurrentConfig = async (): Promise<void> => {
+  const loadCurrentConfig = useCallback(async (): Promise<void> => {
     const result = await window.api.getCurrentConfig?.()
     if (result) {
       setCurrentModel(result.model ?? '')
     }
-  }
+  }, [])
 
   const loadModels = useCallback(async (providerId?: string): Promise<void> => {
     setLoadingModels(true)
@@ -104,7 +118,7 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
   useEffect(() => {
     loadProviders()
     loadCurrentConfig()
-  }, [])
+  }, [loadProviders, loadCurrentConfig])
 
   const activeProviderId = providers.find(p => p.isActive === 1)?.id
   useEffect(() => {
@@ -297,6 +311,27 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
             </button>
           </div>
 
+          {/* 刷新失败的非阻塞提示（已有列表时保留旧列表展示） */}
+          {loadProvidersError && providers.length > 0 && (
+            <div
+              className="mb-2 px-3 py-2 rounded text-xs flex items-center justify-between gap-2"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: 'rgb(185, 28, 28)'
+              }}
+            >
+              <span className="flex-1 break-all">刷新供应商列表失败：{loadProvidersError}</span>
+              <button
+                type="button"
+                onClick={() => loadProviders()}
+                className="text-xs hover:opacity-70 flex-shrink-0"
+              >
+                重试
+              </button>
+            </div>
+          )}
+
           {/* 编辑/新建供应商表单 */}
           {editingProvider && (
             <div
@@ -418,14 +453,37 @@ function AISettingsPanel({ onClose }: AISettingsPanelProps): JSX.Element {
           {/* 供应商卡片列表 */}
           {providers.length === 0 && !editingProvider ? (
             <div className="text-center py-8" style={{ color: 'var(--color-text-secondary)' }}>
-              <p className="text-sm">暂无供应商配置</p>
-              <button
-                onClick={handleNewProvider}
-                className="mt-2 text-xs"
-                style={{ color: 'var(--color-accent)' }}
-              >
-                点击添加第一个供应商
-              </button>
+              {loadingProviders ? (
+                <div className="flex items-center justify-center gap-2">
+                  <RefreshCw size={14} className="animate-spin" />
+                  <p className="text-sm">正在加载供应商...</p>
+                </div>
+              ) : loadProvidersError ? (
+                <>
+                  <p className="text-sm break-all" style={{ color: 'var(--color-danger)' }}>
+                    加载供应商列表失败：{loadProvidersError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => loadProviders()}
+                    className="mt-2 text-xs"
+                    style={{ color: 'var(--color-accent)' }}
+                  >
+                    重试
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">暂无供应商配置</p>
+                  <button
+                    onClick={handleNewProvider}
+                    className="mt-2 text-xs"
+                    style={{ color: 'var(--color-accent)' }}
+                  >
+                    点击添加第一个供应商
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
