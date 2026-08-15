@@ -79,7 +79,7 @@ export default function SearchPanel(): JSX.Element {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void doSearch() }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void doSearch() }}
           placeholder="全书搜索：正文 / 章纲 / 角色 / 世界观…"
           className="flex-1 px-3 py-1.5 rounded text-sm outline-none"
           style={{ backgroundColor: 'var(--color-sidebar)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}

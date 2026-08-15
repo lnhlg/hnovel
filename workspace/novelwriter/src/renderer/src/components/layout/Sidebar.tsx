@@ -361,7 +361,7 @@ export default function Sidebar(): JSX.Element {
                                     value={renameTitle}
                                     onChange={(e) => setRenameTitle(e.target.value)}
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter') handleRenameConfirm()
+                                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleRenameConfirm()
                                       if (e.key === 'Escape') setRenameChapterId(null)
                                     }}
                                     onBlur={handleRenameConfirm}

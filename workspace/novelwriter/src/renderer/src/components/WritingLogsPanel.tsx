@@ -68,7 +68,7 @@ export default function WritingLogsPanel(): JSX.Element {
         <textarea
           value={newLogContent}
           onChange={(e) => setNewLogContent(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleAdd())}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && (e.preventDefault(), handleAdd())}
           className="textarea w-full text-xs"
           rows={2}
           placeholder="记录今天的写作心得、进度或想法..."

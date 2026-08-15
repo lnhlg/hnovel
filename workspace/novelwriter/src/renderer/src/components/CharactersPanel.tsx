@@ -418,7 +418,7 @@ export default function CharactersPanel(): JSX.Element {
         ))}
         {!editingChar && (
           <div className="flex gap-1 pt-1">
-            <input type="text" value={newCharName} onChange={(e) => setNewCharName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAdd()} placeholder="输入角色名..." className="input flex-1 text-xs" />
+            <input type="text" value={newCharName} onChange={(e) => setNewCharName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()} placeholder="输入角色名..." className="input flex-1 text-xs" />
             <button onClick={handleAdd} disabled={!newCharName.trim()} className="btn btn-primary text-xs py-1">添加</button>
           </div>
         )}

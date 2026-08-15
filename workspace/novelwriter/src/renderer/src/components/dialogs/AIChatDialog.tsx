@@ -549,7 +549,8 @@ export default function AIChatDialog({ open, onClose, entityType, projectId, cha
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // isComposing 时 Enter 是中文输入法的"上屏"确认键，不能拦截也不能发送
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       handleSend()
     }

@@ -994,7 +994,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       {searchOpen && (
         <div className="flex items-center gap-2 px-4 py-1.5" style={{ borderBottom: '1px solid var(--color-border-light)', backgroundColor: 'var(--color-sidebar)' }}>
           <input ref={searchInputRef} value={searchQuery} onChange={e => handleSearchChange(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); goToMatch(e.shiftKey ? -1 : 1) } }}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); goToMatch(e.shiftKey ? -1 : 1) } }}
             placeholder="搜索..."
             style={{ flex: 1, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 12, outline: 'none' }} />
           <span className="text-xs" style={{ color: 'var(--color-text-dim)', minWidth: 60, textAlign: 'center' }}>
