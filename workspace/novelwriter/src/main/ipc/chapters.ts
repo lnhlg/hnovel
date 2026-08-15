@@ -12,7 +12,7 @@ import {
 } from '../markdownStorage'
 import { now, saveChapterWithMd } from './helpers'
 import { validateOrThrow, chapterSaveSchema } from '../ipcValidation'
-import { rebuildProjectIndex } from './search'
+import { scheduleProjectIndexRebuild } from '../indexRebuild'
 
 
 
@@ -24,8 +24,8 @@ export function registerChapterHandlers(): void {
   ipcMain.handle('chapter:save', (_event, data: Partial<Chapter> & { projectId: string }) => {
     validateOrThrow(chapterSaveSchema, data, 'chapter:save')
     const saved = saveChapterWithMd(data.projectId, data)
-    // 保存后异步刷新搜索索引（书稿目录为事实源，索引允许短暂滞后）
-    void rebuildProjectIndex(data.projectId).catch(console.error)
+    // 保存后防抖刷新搜索索引（书稿目录为事实源，索引允许短暂滞后）
+    scheduleProjectIndexRebuild(data.projectId)
     return saved
   })
 
@@ -41,6 +41,7 @@ export function registerChapterHandlers(): void {
         if (project.path) {
           deleteChapterMD(project.path, chapter.title, chapter.sortOrder)
         }
+        scheduleProjectIndexRebuild(project.id)
         break
       }
     }

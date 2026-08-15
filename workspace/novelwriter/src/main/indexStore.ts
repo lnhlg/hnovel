@@ -72,8 +72,11 @@ export function saveIndex(db: Database, dbPath: string): void {
   atomicWriteBuffer(dbPath, db.export())
 }
 
-export function rebuildSearchIndex(db: Database, docs: IndexedDoc[]): void {
+export function clearSearchDocs(db: Database): void {
   db.run('DELETE FROM search_docs')
+}
+
+export function insertSearchDocs(db: Database, docs: IndexedDoc[]): void {
   const stmt = db.prepare(
     'INSERT INTO search_docs (doc_id, kind, title, body, chapter_order) VALUES (?, ?, ?, ?, ?)'
   )
@@ -81,6 +84,11 @@ export function rebuildSearchIndex(db: Database, docs: IndexedDoc[]): void {
     stmt.run([d.docId, d.kind, d.title, d.body, d.chapterOrder])
   }
   stmt.free()
+}
+
+export function rebuildSearchIndex(db: Database, docs: IndexedDoc[]): void {
+  clearSearchDocs(db)
+  insertSearchDocs(db, docs)
 }
 
 function snippet(body: string, query: string, radius = 40): string {

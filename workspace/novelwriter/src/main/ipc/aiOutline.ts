@@ -31,7 +31,7 @@ import {
 } from '../markdownStorage'
 import { now, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges } from './helpers'
 import { validateOrThrow, generateChapterOptsSchema, planChaptersOptsSchema } from '../ipcValidation'
-import { rebuildProjectIndex } from './search'
+import { scheduleProjectIndexRebuild } from '../indexRebuild'
 
 
 
@@ -61,7 +61,7 @@ export function registerAIOutlineHandlers(): void {
         if (project.path) {
           const index = chapters.findIndex(c => c.id === chapterId)
           saveChapterMD(project.path, chapter, index)
-          void rebuildProjectIndex(project.id).catch(console.error)
+          scheduleProjectIndexRebuild(project.id)
         }
         return chapter
       }

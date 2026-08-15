@@ -5,6 +5,7 @@ import { initStorage } from './fileStorage'
 import { registerProjectHandlers, registerChapterHandlers, registerCharacterHandlers, registerDialogHandlers, registerAIOutlineHandlers, registerAIWizardHandlers, registerWorldSettingsHandlers, registerTimelineHandlers, registerLocationHandlers, registerItemHandlers, registerDialogueHandlers, registerCharacterRelationHandlers, registerInspirationHandlers, registerWritingLogHandlers, registerReferenceHandlers, registerAIAssetHandlers, registerDocHandlers, registerWritingStyleHandlers, registerSkillHandlers, registerSearchHandlers } from './ipc'
 import { registerAIHandlers, loadActiveProvider } from './ai'
 import { migrateAllProjects, normalizeAllProjects } from './storageMigration'
+import { flushPendingIndexRebuilds, hasPendingIndexRebuilds } from './indexRebuild'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -82,4 +83,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// 退出前把防抖中的索引重建立即执行完，避免"写完就关"导致最后一次保存永远不进索引
+let indexFlushedOnQuit = false
+app.on('before-quit', (event) => {
+  if (indexFlushedOnQuit || !hasPendingIndexRebuilds()) return
+  event.preventDefault()
+  indexFlushedOnQuit = true
+  void flushPendingIndexRebuilds().finally(() => app.quit())
 })

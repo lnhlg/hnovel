@@ -17,6 +17,7 @@ import {
 } from '../indexStore'
 import type { SearchOptions, Foreshadow } from '../indexStore'
 import { collectIndexableDocs } from '../indexDocs'
+import { rebuildProjectIndex } from '../indexRebuild'
 
 function indexPathFor(projectId: string): string | null {
   const project = loadProjectById(projectId)
@@ -25,20 +26,11 @@ function indexPathFor(projectId: string): string | null {
 }
 
 export function registerSearchHandlers(): void {
-  // 从书稿目录全量重建索引
+  // 从书稿目录全量重建索引（分批执行并让出事件循环，不阻塞其他 IPC）
   ipcMain.handle('index:rebuild', async (_event, projectId: string) => {
-    const project = loadProjectById(projectId)
-    if (!project?.path) throw new Error('项目不存在或未设置路径')
-    const dbPath = join(project.path, '.novelwriter', 'index.db')
-    const db = await openIndex(dbPath)
-    try {
-      const docs = collectIndexableDocs(project.path)
-      rebuildSearchIndex(db, docs)
-      saveIndex(db, dbPath)
-      return { success: true, count: docs.length }
-    } finally {
-      db.close()
-    }
+    const result = await rebuildProjectIndex(projectId)
+    if (!result.success) throw new Error('项目不存在或未设置路径')
+    return result
   })
 
   // 全书搜索；索引缺失或为空时自动重建
@@ -100,20 +92,4 @@ export function registerSearchHandlers(): void {
     deleteForeshadowRecord(projectId, id)
     return { success: true }
   })
-}
-
-/** 从书稿目录全量重建项目索引（保存章节后由写路径调用，索引允许滞后） */
-export async function rebuildProjectIndex(projectId: string): Promise<{ success: boolean; count: number }> {
-  const project = loadProjectById(projectId)
-  if (!project?.path) return { success: false, count: 0 }
-  const dbPath = join(project.path, '.novelwriter', 'index.db')
-  const db = await openIndex(dbPath)
-  try {
-    const docs = collectIndexableDocs(project.path)
-    rebuildSearchIndex(db, docs)
-    saveIndex(db, dbPath)
-    return { success: true, count: docs.length }
-  } finally {
-    db.close()
-  }
 }
