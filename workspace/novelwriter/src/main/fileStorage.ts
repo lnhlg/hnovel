@@ -1,4 +1,4 @@
-import { app, shell } from 'electron'
+import { app, shell, safeStorage } from 'electron'
 import { join, dirname } from 'path'
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, copyFileSync, unlinkSync } from 'fs'
 import { atomicWriteJson } from './atomicWrite'
@@ -714,17 +714,47 @@ export function saveStoryProgress(projectId: string, storyProgress: string): voi
 
 // ===================== AI 供应商操作 =====================
 
+// apiKey 落盘加密：safeStorage 可用时存 enc:<base64>，不可用（如无钥匙环的 Linux）回退明文。
+// 加密只在"磁盘上"发生；读入内存后仍为明文供请求使用，行为与之前一致。
+const API_KEY_PREFIX = 'enc:'
+
+function encryptApiKey(plain: string): string {
+  if (!plain || plain.startsWith(API_KEY_PREFIX)) return plain
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return API_KEY_PREFIX + safeStorage.encryptString(plain).toString('base64')
+    }
+  } catch (err) {
+    console.error('[storage] apiKey 加密失败，回退明文存储:', err)
+  }
+  return plain
+}
+
+function decryptApiKey(stored: string): string {
+  if (!stored || !stored.startsWith(API_KEY_PREFIX)) return stored
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return safeStorage.decryptString(Buffer.from(stored.slice(API_KEY_PREFIX.length), 'base64'))
+    }
+  } catch (err) {
+    console.error('[storage] apiKey 解密失败（返回空，请重新填写）:', err)
+  }
+  return ''
+}
+
 export function loadAIProviders(): AIProvider[] {
-  return readJson<AIProvider[]>(AI_PROVIDERS_FILE) ?? []
+  const providers = readJson<AIProvider[]>(AI_PROVIDERS_FILE) ?? []
+  return providers.map(p => ({ ...p, apiKey: decryptApiKey(p.apiKey ?? '') }))
 }
 
 export function saveAIProvider(provider: AIProvider): AIProvider {
   const providers = loadAIProviders()
   const idx = providers.findIndex(p => p.id === provider.id)
+  const toSave = { ...provider, apiKey: encryptApiKey(provider.apiKey ?? '') }
   if (idx >= 0) {
-    providers[idx] = provider
+    providers[idx] = toSave
   } else {
-    providers.push(provider)
+    providers.push(toSave)
   }
   ensureDir(APP_DIR)
   writeJson(AI_PROVIDERS_FILE, providers)

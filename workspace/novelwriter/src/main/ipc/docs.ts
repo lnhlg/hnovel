@@ -280,14 +280,15 @@ export function registerDocHandlers(): void {
 
         writeCharacterContent(projectPath, newName, content)
 
+        // 合并保护：MD 里缺失的字段保留 JSON 现值，避免解析正则未命中时把字段清空
         character.name = newName
-        character.description = parsed.description ?? character.description
-        character.traits = parsed.traits ?? character.traits
-        character.age = parsed.age ?? character.age
-        character.appearance = parsed.appearance ?? character.appearance
-        character.background = parsed.background ?? character.background
-        character.personality = parsed.personality ?? character.personality
-        character.role = parsed.role ?? character.role
+        if (parsed.description) character.description = parsed.description
+        if (parsed.traits) character.traits = parsed.traits
+        if (parsed.age) character.age = parsed.age
+        if (parsed.appearance) character.appearance = parsed.appearance
+        if (parsed.background) character.background = parsed.background
+        if (parsed.personality) character.personality = parsed.personality
+        if (parsed.role) character.role = parsed.role
         character.updatedAt = time
         saveCharacter(projectId, character)
         return { success: true, newName }
@@ -312,10 +313,11 @@ export function registerDocHandlers(): void {
 
         writeWorldSettingContent(projectPath, newCategory, newKey, content)
 
+        // 合并保护：MD 缺失的字段保留 JSON 现值
         setting.category = newCategory
         setting.key = newKey
-        setting.value = newValue
-        setting.description = newDesc
+        if (newValue) setting.value = newValue
+        if (newDesc) setting.description = newDesc
         setting.updatedAt = time
         saveWorldSetting(projectId, setting)
         return { success: true, newKey, newCategory }
@@ -338,9 +340,10 @@ export function registerDocHandlers(): void {
 
         writeLocationContent(projectPath, newName, content)
 
+        // 合并保护：MD 缺失的字段保留 JSON 现值
         location.name = newName
-        location.description = newDesc
-        location.type = newType
+        if (newDesc) location.description = newDesc
+        if (newType) location.type = newType
         location.updatedAt = time
         saveLocation(projectId, location)
         return { success: true, newName }

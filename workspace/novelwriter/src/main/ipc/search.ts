@@ -10,13 +10,10 @@ import {
 } from '../fileStorage'
 import {
   openIndex,
-  saveIndex,
-  rebuildSearchIndex,
   searchIndex,
   listForeshadows
 } from '../indexStore'
 import type { SearchOptions, Foreshadow } from '../indexStore'
-import { collectIndexableDocs } from '../indexDocs'
 import { rebuildProjectIndex } from '../indexRebuild'
 
 function indexPathFor(projectId: string): string | null {
@@ -33,23 +30,29 @@ export function registerSearchHandlers(): void {
     return result
   })
 
-  // 全书搜索；索引缺失或为空时自动重建
+  // 全书搜索；索引缺失或为空时自动重建（走统一重建路径，与调度器互斥）
   ipcMain.handle('index:search', async (_event, projectId: string, query: string, options?: SearchOptions) => {
     const dbPath = indexPathFor(projectId)
     if (!dbPath) return []
-    const db = await openIndex(dbPath)
+    let db = await openIndex(dbPath)
     try {
       const countRow = db.exec('SELECT COUNT(*) FROM search_docs')[0]
       if (!countRow || Number(countRow.values[0][0]) === 0) {
         const project = loadProjectById(projectId)
         if (project?.path) {
-          rebuildSearchIndex(db, collectIndexableDocs(project.path))
-          saveIndex(db, dbPath)
+          db.close()
+          // 现场重建统一走 rebuildProjectIndex：内含同项目互斥 + 分批让出事件循环
+          await rebuildProjectIndex(projectId)
+          db = await openIndex(dbPath)
         }
       }
       return searchIndex(db, query, options)
     } finally {
-      db.close()
+      try {
+        db.close()
+      } catch {
+        /* 重建失败路径下 db 可能已关闭，忽略 */
+      }
     }
   })
 

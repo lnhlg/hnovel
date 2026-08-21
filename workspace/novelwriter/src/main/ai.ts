@@ -2,11 +2,15 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { AIProvider, loadAIProviders, saveAIProvider, deleteAIProvider as deleteAIProviderFile } from './fileStorage'
 import { validateOrThrow, aiChatOptionsSchema } from './ipcValidation'
+import { isReasoningModel } from '../shared/aiModels'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
+
+// ai:chat 已支持的全部选项键；收到未知键说明渲染/主进程版本不一致，记录警告便于排查
+const AI_CHAT_KNOWN_OPTIONS = new Set(['stream', 'model', 'providerId', 'requestId', 'reasoningEffort', 'temperature', 'topP'])
 
 export interface ModelInfo {
   id: string
@@ -67,15 +71,27 @@ export function loadActiveProvider(): AIProvider | null {
 // 判断是否为支持 reasoning_effort 参数的推理/思考模型
 // 包括：OpenAI o1/o3/o4/gpt-5 系列、DeepSeek V4/R1 系列、含 reasoning/reasoner/thinking 关键字的模型
 // 其他模型传该参数会触发 400 Bad Request
-function isReasoningModel(model: string): boolean {
-  const m = model.toLowerCase()
-  return (
-    /^(o1|o3|o4|gpt-5)/.test(m) ||
-    /^deepseek-(v4|r1)/.test(m) ||
-    m.includes('reasoning') ||
-    m.includes('reasoner') ||
-    m.includes('thinking')
-  )
+// 判定实现见 src/shared/aiModels.ts（与渲染进程共享，禁止在此另写一份）
+
+// 非流式请求的轻量重试：网络错误与 5xx 最多重试 attempts-1 次，4xx 与用户中止（AbortError）不重试。
+// 重试决策发生在读取响应体之前，流式请求同样安全（不会重复输出已读内容）。
+async function fetchWithRetry(fn: () => Promise<Response>, attempts = 3): Promise<Response> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    let response: Response
+    try {
+      response = await fn()
+    } catch (err) {
+      if (attempt < attempts - 1 && !(err instanceof Error && err.name === 'AbortError')) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+        continue
+      }
+      throw err
+    }
+    if (response.status < 500 || attempt >= attempts - 1) return response
+    await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+  }
+  // unreachable（attempts >= 1 时循环内必 return/throw）
+  throw new Error('请求失败（重试耗尽）')
 }
 
 // OpenAI 兼容 API 调用（非流式）
@@ -91,7 +107,7 @@ export async function chatOpenAI(
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
   const shouldSendReasoningEffort = reasoningEffort && isReasoningModel(model)
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(() => fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -106,7 +122,7 @@ export async function chatOpenAI(
       ...(topP !== undefined ? { top_p: topP } : {})
     }),
     signal
-  })
+  }))
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '')
@@ -228,7 +244,7 @@ export async function chatOllama(
   const url = getApiUrl(provider.baseUrl, 'ollama', 'chat')
   const isStream = !!onChunk
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(() => fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -245,7 +261,7 @@ export async function chatOllama(
         : {})
     }),
     signal
-  })
+  }))
 
   if (!response.ok) {
     throw new Error(`Ollama error: ${response.status} ${response.statusText}`)
@@ -559,6 +575,11 @@ export function registerAIHandlers(): void {
   // AI 聊天（默认用活跃供应商，可通过 options.providerId 临时切换到任意供应商，options.model 切换模型）
   ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max'; temperature?: number; topP?: number; requestId?: string }) => {
     validateOrThrow(aiChatOptionsSchema, options ?? {}, 'ai:chat options')
+    // 未知选项会被 schema 透传并静默忽略——通常是渲染/主进程版本不一致，打警告让这类漂移可见
+    const unknownOptionKeys = options ? Object.keys(options).filter(k => !AI_CHAT_KNOWN_OPTIONS.has(k)) : []
+    if (unknownOptionKeys.length > 0) {
+      console.warn(`[ai:chat] 收到未知选项（可能为渲染/主进程版本不一致，已忽略）: ${unknownOptionKeys.join(', ')}`)
+    }
     const window = BrowserWindow.fromWebContents(event.sender)
     const isStream = options?.stream ?? false
     const reasoningEffort = options?.reasoningEffort

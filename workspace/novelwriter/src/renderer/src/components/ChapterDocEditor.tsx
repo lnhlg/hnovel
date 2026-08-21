@@ -7,6 +7,7 @@ import ExtractMemoryDialog from './dialogs/ExtractMemoryDialog'
 import AIChatDialog from './dialogs/AIChatDialog'
 import AIGenerateDialog from './AIGenerateDialog'
 import ModelSelector from './ModelSelector'
+import { isReasoningModel } from '../../../shared/aiModels'
 
 interface ChapterDocEditorProps {
   doc: OpenDoc
@@ -105,18 +106,6 @@ function loadPolishSettings(): PolishSavedSettings {
   return {}
 }
 
-// 与主进程 ai.ts 的 isReasoningModel 保持一致：推理模型固定采样，忽略 temperature/top_p
-function isReasoningModelName(model: string): boolean {
-  const m = model.toLowerCase()
-  return (
-    /^(o1|o3|o4|gpt-5)/.test(m) ||
-    /^deepseek-(v4|r1)/.test(m) ||
-    m.includes('reasoning') ||
-    m.includes('reasoner') ||
-    m.includes('thinking')
-  )
-}
-
 export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.Element {
   const setDocContent = useLayoutStore((s) => s.setDocContent)
   const setDocDirty = useLayoutStore((s) => s.setDocDirty)
@@ -180,8 +169,8 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [polishTemperature, setPolishTemperature] = useState<number | null>(null)
   const [polishTopP, setPolishTopP] = useState<number | null>(null)
   const [polishCustomSampling, setPolishCustomSampling] = useState(false)
-  // 推理模型固定采样，采样参数不适用（与主进程 isReasoningModel 对应）
-  const polishModelIsReasoning = isReasoningModelName(polishModel)
+  // 推理模型固定采样，采样参数与推理力度不适用（判定见 src/shared/aiModels.ts，与主进程共享）
+  const polishModelIsReasoning = isReasoningModel(polishModel)
   const [showPolishEffortDropdown, setShowPolishEffortDropdown] = useState(false)
   const [polishHistory, setPolishHistory] = useState<string[]>([])
   const polishUndoStack = useRef<string[]>([])
@@ -1433,8 +1422,10 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
               />
               <div className="relative">
                 <button onClick={() => setShowPolishEffortDropdown(!showPolishEffortDropdown)}
+                  disabled={polishing || !polishModelIsReasoning}
                   className="flex items-center gap-1 px-2 py-1 rounded text-xs"
-                  style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                  style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', opacity: polishModelIsReasoning ? 1 : 0.5 }}
+                  title={polishModelIsReasoning ? '' : '非推理模型不发送推理力度'}>
                   <span>{polishEffort === 'low' ? '低' : polishEffort === 'medium' ? '中' : polishEffort === 'high' ? '高' : '最高'}</span>
                   <ChevronDown size={10} />
                 </button>
@@ -1443,6 +1434,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                     style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                     {(['low', 'medium', 'high', 'max'] as const).map(e => (
                       <button key={e} onClick={() => { setPolishEffort(e); setShowPolishEffortDropdown(false) }}
+                        disabled={polishing}
                         className="w-full px-3 py-1.5 text-left text-xs"
                         style={{ color: polishEffort === e ? 'var(--color-accent)' : 'var(--color-text)' }}>
                         {e === 'low' ? '低' : e === 'medium' ? '中' : e === 'high' ? '高' : '最高(max)'}
@@ -1451,6 +1443,11 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                   </div>
                 )}
               </div>
+              {!polishModelIsReasoning && (
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  当前模型非推理模型，推理力度不适用
+                </span>
+              )}
             </div>
 
             {/* 采样参数：临时覆盖，自定义开关关闭时不发送（ADR 0005） */}

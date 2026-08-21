@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { existsSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
+  getActiveProvider,
   getCurrentModel,
   setCurrentModel,
   listOpenAIModels,
@@ -50,26 +51,31 @@ function extractTitleFromBodyMD(fullContent: string): string {
 
 
 
-// 确保有可用的模型：如果当前模型为空，自动获取第一个
+// 确保有可用的模型。优先级：
+//   1. 该供应商保存的 model（不污染其他供应商）
+//   2. 拉取该供应商模型列表取第一个（仅对活跃供应商持久化为全局当前模型）
+//   3. 全局当前模型（兜底）
+//   4. 明确报错——不再硬编码可能已下线的默认模型名（gpt-3.5-turbo/qwen2.5）
 async function ensureModel(provider: AIProvider): Promise<string> {
-  let model = getCurrentModel()
-  if (model) return model
+  if (provider.model) return provider.model
 
-  // 模型为空，自动获取列表
   const models = provider.type === 'ollama'
     ? await listOllamaModels(provider)
     : await listOpenAIModels(provider)
 
   if (models.length > 0) {
-    model = models[0].id
-    setCurrentModel(model)
+    const model = models[0].id
+    // 只有对活跃供应商才持久化，避免把别的供应商的模型写进活跃供应商配置
+    if (provider.id === getActiveProvider()?.id) {
+      setCurrentModel(model)
+    }
     return model
   }
 
-  // 获取不到列表，用默认模型名
-  model = provider.type === 'ollama' ? 'qwen2.5' : 'gpt-3.5-turbo'
-  setCurrentModel(model)
-  return model
+  const global = getCurrentModel()
+  if (global) return global
+
+  throw new Error(`无法确定模型：请先在 AI 设置中为「${provider.name || '当前供应商'}」选择一个模型`)
 }
 
 
@@ -111,6 +117,29 @@ function extractCharChanges(outline: string): string[] {
   const field = extractField(outline, '人物变化')
   if (!field) return []
   return field.split('\n').map(line => line.replace(/^- /, '').trim()).filter(Boolean)
+}
+
+/**
+ * 从 AI 输出中提取配对的 JSON 数组/对象文本。
+ * 优先取 ```json/``` 围栏内的内容；无围栏时从全文找第一个配对括号。
+ * 用括号配对而非贪婪正则，避免误抓说明文字里的括号。
+ */
+function extractFirstBalanced(text: string, open: '[' | '{', close: ']' | '}'): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  const candidate = fenced ? fenced[1] : text
+  const start = candidate.indexOf(open)
+  if (start === -1) return null
+  let depth = 0
+  for (let i = start; i < candidate.length; i++) {
+    const ch = candidate[i]
+    if (ch === open) {
+      depth++
+    } else if (ch === close) {
+      depth--
+      if (depth === 0) return candidate.slice(start, i + 1)
+    }
+  }
+  return null
 }
 
 /**
@@ -183,4 +212,4 @@ export function saveChapterWithMd(
   return chapter
 }
 
-export { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges }
+export { now, extractTitleFromBody, extractTitleFromBodyMD, ensureModel, extractField, extractListItems, extractConflict, extractCharChanges, extractFirstBalanced }
