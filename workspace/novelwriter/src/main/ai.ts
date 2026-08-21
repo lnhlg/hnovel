@@ -84,7 +84,9 @@ export async function chatOpenAI(
   model: string,
   messages: ChatMessage[],
   signal?: AbortSignal,
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'max'
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'max',
+  temperature?: number,
+  topP?: number
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
   const shouldSendReasoningEffort = reasoningEffort && isReasoningModel(model)
@@ -99,7 +101,9 @@ export async function chatOpenAI(
       model,
       messages,
       stream: false,
-      ...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {})
+      ...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { top_p: topP } : {})
     }),
     signal
   })
@@ -120,7 +124,9 @@ export async function chatOpenAIStream(
   messages: ChatMessage[],
   onChunk: (chunk: string) => void,
   signal?: AbortSignal,
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'max'
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'max',
+  temperature?: number,
+  topP?: number
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'openai', 'chat')
   const shouldSendReasoningEffort = reasoningEffort && isReasoningModel(model)
@@ -135,7 +141,9 @@ export async function chatOpenAIStream(
       model,
       messages,
       stream: true,
-      ...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {})
+      ...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { top_p: topP } : {})
     }),
     signal
   })
@@ -213,18 +221,28 @@ export async function chatOllama(
   model: string,
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  temperature?: number,
+  topP?: number
 ): Promise<string> {
   const url = getApiUrl(provider.baseUrl, 'ollama', 'chat')
   const isStream = !!onChunk
-  
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
       messages,
-      stream: isStream
+      stream: isStream,
+      ...(temperature !== undefined || topP !== undefined
+        ? {
+            options: {
+              ...(temperature !== undefined ? { temperature } : {}),
+              ...(topP !== undefined ? { top_p: topP } : {})
+            }
+          }
+        : {})
     }),
     signal
   })
@@ -539,11 +557,13 @@ export function registerAIHandlers(): void {
   })
 
   // AI 聊天（默认用活跃供应商，可通过 options.providerId 临时切换到任意供应商，options.model 切换模型）
-  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max'; requestId?: string }) => {
+  ipcMain.handle('ai:chat', async (event, messages: ChatMessage[], options?: { stream?: boolean; model?: string; providerId?: string; reasoningEffort?: 'low' | 'medium' | 'high' | 'max'; temperature?: number; topP?: number; requestId?: string }) => {
     validateOrThrow(aiChatOptionsSchema, options ?? {}, 'ai:chat options')
     const window = BrowserWindow.fromWebContents(event.sender)
     const isStream = options?.stream ?? false
     const reasoningEffort = options?.reasoningEffort
+    const temperature = options?.temperature
+    const topP = options?.topP
     // 未传 requestId 时自动生成，保证每个请求都能被独立中止
     const requestId = options?.requestId || randomUUID()
 
@@ -562,6 +582,12 @@ export function registerAIHandlers(): void {
       throw new Error('请先选择模型')
     }
 
+    // 推理模型按规范固定采样，忽略 temperature/top_p；显式发送可能触发部分 API 报错（如 deepseek-reasoner），
+    // 与 reasoning_effort 同理，按模型名判定后剥除采样参数
+    const isReasoning = isReasoningModel(model)
+    const samplingTemperature = isReasoning ? undefined : temperature
+    const samplingTopP = isReasoning ? undefined : topP
+
     // 创建可中止的请求，并登记到按 requestId 索引的控制器集合
     const abortController = new AbortController()
     registerAbortController(requestId, abortController)
@@ -572,16 +598,16 @@ export function registerAIHandlers(): void {
         if (isStream && window) {
           return await chatOllama(provider, model, messages, (chunk) => {
             window.webContents.send('ai:chunk', chunk)
-          }, signal)
+          }, signal, samplingTemperature, samplingTopP)
         }
-        return await chatOllama(provider, model, messages, undefined, signal)
+        return await chatOllama(provider, model, messages, undefined, signal, samplingTemperature, samplingTopP)
       } else {
         if (isStream && window) {
           return await chatOpenAIStream(provider, model, messages, (chunk) => {
             window.webContents.send('ai:chunk', chunk)
-          }, signal, reasoningEffort)
+          }, signal, reasoningEffort, samplingTemperature, samplingTopP)
         }
-        return await chatOpenAI(provider, model, messages, signal, reasoningEffort)
+        return await chatOpenAI(provider, model, messages, signal, reasoningEffort, samplingTemperature, samplingTopP)
       }
     } finally {
       releaseAbortController(requestId)

@@ -80,6 +80,43 @@ function extractTitleFromBody(body: string): string {
   return ''
 }
 
+// 润色对话框设置（模型/推理力度/采样参数）是临时覆盖：应用级记忆，不写回全局聊天设置（ADR 0005）
+const POLISH_SETTINGS_KEY = 'novelwriter-polish-settings'
+const DEFAULT_TEMPERATURE = 0.7
+const DEFAULT_TOP_P = 1.0
+
+interface PolishSavedSettings {
+  providerId?: string
+  model?: string
+  effort?: 'low' | 'medium' | 'high' | 'max'
+  temperature?: number
+  topP?: number
+  custom?: boolean
+}
+
+function loadPolishSettings(): PolishSavedSettings {
+  try {
+    const raw = localStorage.getItem(POLISH_SETTINGS_KEY)
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') return parsed as PolishSavedSettings
+    }
+  } catch { /* ignore */ }
+  return {}
+}
+
+// 与主进程 ai.ts 的 isReasoningModel 保持一致：推理模型固定采样，忽略 temperature/top_p
+function isReasoningModelName(model: string): boolean {
+  const m = model.toLowerCase()
+  return (
+    /^(o1|o3|o4|gpt-5)/.test(m) ||
+    /^deepseek-(v4|r1)/.test(m) ||
+    m.includes('reasoning') ||
+    m.includes('reasoner') ||
+    m.includes('thinking')
+  )
+}
+
 export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.Element {
   const setDocContent = useLayoutStore((s) => s.setDocContent)
   const setDocDirty = useLayoutStore((s) => s.setDocDirty)
@@ -94,9 +131,6 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const chatModel = useAppStore((s) => s.chatModel)
   const chatProviderId = useAppStore((s) => s.chatProviderId)
   const chatReasoningEffort = useAppStore((s) => s.chatReasoningEffort)
-  const setChatModel = useAppStore((s) => s.setChatModel)
-  const setChatProviderId = useAppStore((s) => s.setChatProviderId)
-  const setChatReasoningEffort = useAppStore((s) => s.setChatReasoningEffort)
   const skills = useAppStore((s) => s.skills)
   const writingStyles = useAppStore((s) => s.writingStyles)
   const loadWritingStyles = useAppStore((s) => s.loadWritingStyles)
@@ -143,6 +177,11 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
   const [polishModel, setPolishModel] = useState('')
   const [polishProviderId, setPolishProviderId] = useState('')
   const [polishEffort, setPolishEffort] = useState<'low' | 'medium' | 'high' | 'max'>('medium')
+  const [polishTemperature, setPolishTemperature] = useState<number | null>(null)
+  const [polishTopP, setPolishTopP] = useState<number | null>(null)
+  const [polishCustomSampling, setPolishCustomSampling] = useState(false)
+  // 推理模型固定采样，采样参数不适用（与主进程 isReasoningModel 对应）
+  const polishModelIsReasoning = isReasoningModelName(polishModel)
   const [showPolishEffortDropdown, setShowPolishEffortDropdown] = useState(false)
   const [polishHistory, setPolishHistory] = useState<string[]>([])
   const polishUndoStack = useRef<string[]>([])
@@ -727,6 +766,36 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
     }
   }
 
+  // 润色对话框设置：应用级记忆（临时覆盖，不写回全局聊天设置）
+  useEffect(() => {
+    if (!showAiPolish) return
+    try {
+      localStorage.setItem(POLISH_SETTINGS_KEY, JSON.stringify({
+        providerId: polishProviderId,
+        model: polishModel,
+        effort: polishEffort,
+        temperature: polishTemperature ?? undefined,
+        topP: polishTopP ?? undefined,
+        custom: polishCustomSampling
+      }))
+    } catch { /* ignore */ }
+  }, [showAiPolish, polishProviderId, polishModel, polishEffort, polishTemperature, polishTopP, polishCustomSampling])
+
+  // 打开润色对话框时初始化：优先上次记忆，缺省回退全局聊天设置
+  const initPolishSettings = useCallback((): { model: string; providerId: string; effort: 'low' | 'medium' | 'high' | 'max'; temperature: number | null; topP: number | null; custom: boolean } => {
+    const saved = loadPolishSettings()
+    const effort: 'low' | 'medium' | 'high' | 'max' =
+      saved.effort && (['low', 'medium', 'high', 'max'] as const).includes(saved.effort) ? saved.effort : chatReasoningEffort
+    return {
+      model: saved.model || chatModel || '',
+      providerId: saved.providerId || chatProviderId || '',
+      effort,
+      temperature: typeof saved.temperature === 'number' ? saved.temperature : null,
+      topP: typeof saved.topP === 'number' ? saved.topP : null,
+      custom: saved.custom === true
+    }
+  }, [chatModel, chatProviderId, chatReasoningEffort])
+
   const handleDeAi = (): void => {
     if (!currentProject) return
     const skillId = currentProject.skillId
@@ -748,9 +817,13 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
       }
     }
     setPolishInstruction(skill.content)
-    setPolishModel(chatModel || '')
-    setPolishProviderId(chatProviderId || '')
-    setPolishEffort(chatReasoningEffort)
+    const init = initPolishSettings()
+    setPolishModel(init.model)
+    setPolishProviderId(init.providerId)
+    setPolishEffort(init.effort)
+    setPolishTemperature(init.temperature)
+    setPolishTopP(init.topP)
+    setPolishCustomSampling(init.custom)
     setShowAiPolish(true)
     setPolishResult('')
     setPolishError('')
@@ -790,7 +863,15 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
         { role: 'system', content: '你是一位专业的小说文本润色编辑。仅对标记为【需要润色的目标文本】的段落进行润色加工，保持语言风格与上下文一致，确保与上下文自然衔接。只返回润色后的文本，不要加任何解释或标记。' },
         { role: 'user', content: userMsg }
       ]
-      const result = await window.api.aiChat(messages, { stream: false, model: polishModel || undefined, providerId: polishProviderId || undefined, reasoningEffort: polishEffort })
+      const result = await window.api.aiChat(messages, {
+        stream: false,
+        model: polishModel || undefined,
+        providerId: polishProviderId || undefined,
+        reasoningEffort: polishEffort,
+        // 采样参数：仅自定义开启且非推理模型时发送（临时覆盖，ADR 0005；推理模型固定采样）
+        temperature: polishCustomSampling && !polishModelIsReasoning ? polishTemperature ?? undefined : undefined,
+        topP: polishCustomSampling && !polishModelIsReasoning ? polishTopP ?? undefined : undefined
+      })
       if (result) {
         setPolishResult(result.trim())
       }
@@ -1161,13 +1242,17 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
                 onClick={() => {
                   setContextMenu(null)
+                  const init = initPolishSettings()
                   setShowAiPolish(true)
                   setPolishResult('')
                   setPolishError('')
                   setPolishInstruction('')
-                  setPolishModel(chatModel || '')
-                  setPolishProviderId(chatProviderId || '')
-                  setPolishEffort(chatReasoningEffort)
+                  setPolishModel(init.model)
+                  setPolishProviderId(init.providerId)
+                  setPolishEffort(init.effort)
+                  setPolishTemperature(init.temperature)
+                  setPolishTopP(init.topP)
+                  setPolishCustomSampling(init.custom)
                 }}
               >
                 <Sparkles size={12} />
@@ -1342,8 +1427,6 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                 onChange={(pid, mid) => {
                   setPolishProviderId(pid)
                   setPolishModel(mid)
-                  setChatProviderId(pid)
-                  setChatModel(mid)
                 }}
                 disabled={polishing}
                 minWidth={160}
@@ -1359,7 +1442,7 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                   <div className="absolute left-0 top-full mt-1 z-50 rounded-lg shadow-lg overflow-hidden"
                     style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                     {(['low', 'medium', 'high', 'max'] as const).map(e => (
-                      <button key={e} onClick={() => { setPolishEffort(e); setChatReasoningEffort(e); setShowPolishEffortDropdown(false) }}
+                      <button key={e} onClick={() => { setPolishEffort(e); setShowPolishEffortDropdown(false) }}
                         className="w-full px-3 py-1.5 text-left text-xs"
                         style={{ color: polishEffort === e ? 'var(--color-accent)' : 'var(--color-text)' }}>
                         {e === 'low' ? '低' : e === 'medium' ? '中' : e === 'high' ? '高' : '最高(max)'}
@@ -1368,6 +1451,66 @@ export default function ChapterDocEditor({ doc }: ChapterDocEditorProps): JSX.El
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* 采样参数：临时覆盖，自定义开关关闭时不发送（ADR 0005） */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  if (polishCustomSampling) {
+                    setPolishCustomSampling(false)
+                    setPolishTemperature(null)
+                    setPolishTopP(null)
+                  } else {
+                    setPolishCustomSampling(true)
+                    if (polishTemperature === null) setPolishTemperature(DEFAULT_TEMPERATURE)
+                    if (polishTopP === null) setPolishTopP(DEFAULT_TOP_P)
+                  }
+                }}
+                disabled={polishing || polishModelIsReasoning}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs"
+                style={{ border: '1px solid var(--color-border)', color: polishCustomSampling ? 'var(--color-accent)' : 'var(--color-text-secondary)', opacity: polishModelIsReasoning ? 0.5 : 1 }}
+              >
+                {polishCustomSampling ? '✔ 自定义采样参数' : '自定义采样参数'}
+              </button>
+              <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>温度</label>
+              <input
+                type="range" min={0} max={2} step={0.1}
+                value={polishTemperature ?? DEFAULT_TEMPERATURE}
+                onChange={e => setPolishTemperature(parseFloat(e.target.value))}
+                disabled={!polishCustomSampling || polishing || polishModelIsReasoning}
+                className="w-24"
+              />
+              <span className="text-xs w-8 text-right" style={{ color: polishCustomSampling ? 'var(--color-text)' : 'var(--color-text-dim)' }}>
+                {polishCustomSampling ? (polishTemperature ?? DEFAULT_TEMPERATURE).toFixed(1) : '默认'}
+              </span>
+              <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>核采样</label>
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={polishTopP ?? DEFAULT_TOP_P}
+                onChange={e => setPolishTopP(parseFloat(e.target.value))}
+                disabled={!polishCustomSampling || polishing || polishModelIsReasoning}
+                className="w-24"
+              />
+              <span className="text-xs w-8 text-right" style={{ color: polishCustomSampling ? 'var(--color-text)' : 'var(--color-text-dim)' }}>
+                {polishCustomSampling ? (polishTopP ?? DEFAULT_TOP_P).toFixed(2) : '默认'}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setPolishCustomSampling(false); setPolishTemperature(null); setPolishTopP(null) }}
+                disabled={polishing || polishModelIsReasoning}
+                className="px-2 py-1 rounded text-xs"
+                style={{ color: 'var(--color-text-dim)' }}
+                title="恢复默认（不发送采样参数，使用模型默认值）"
+              >
+                重置
+              </button>
+              {polishModelIsReasoning && (
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  当前模型为推理模型，固定采样，temperature/top_p 不适用
+                </span>
+              )}
             </div>
 
             <div className="mb-2 flex flex-col min-h-0" style={{ maxHeight: '50%' }}>

@@ -172,7 +172,10 @@ export const aiChatOptionsSchema = z.object({
   model: optStr,
   providerId: optStr,
   requestId: optStr,
-  reasoningEffort: z.enum(['low', 'medium', 'high', 'max']).optional()
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'max']).optional(),
+  // 采样参数（临时覆盖，不传 = 使用模型默认）
+  temperature: optNum,
+  topP: optNum
 }).passthrough()
 
 export const generateChapterOptsSchema = z.object({
